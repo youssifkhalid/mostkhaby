@@ -959,7 +959,7 @@ const ChatPage = () => {
           currentNickname={nicknames[otherUserId]}
 
 
-};
+
 
 export default ChatPage;
           onSave={(n) => setNickname.mutate({ contactId: otherUserId, nickname: n })} />
