@@ -3,10 +3,13 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
 
 /**
- * Real online tracking using Supabase Presence + DB sync.
- * - Joins a global presence channel and tracks the current user.
- * - Updates profiles.is_online / last_seen on join, leave, visibility change.
- * - Sends a sendBeacon-style offline mark on tab close as a fallback.
+ * تتبع حالة الاتصال الحقيقية عن طريق Supabase Presence + DB sync.
+ * - بتنضم لـ presence channel وتتابع اليوزر الحالي.
+ * - بتحدث profiles.is_online / last_seen عند الدخول والخروج وتغيير الـ visibility.
+ * - بترسل تحديث offline عند إغلاق التاب كـ fallback.
+ *
+ * ✅ كل عمليات الكتابة على الداتابيز محاطة بـ try/catch
+ *    عشان لو العمود مش موجود لأي سبب، التطبيق ما يكرشش.
  */
 export const useOnlineStatus = () => {
   const { user } = useAuth();
@@ -18,17 +21,24 @@ export const useOnlineStatus = () => {
 
     const setOnlineDb = async (online: boolean) => {
       const now = Date.now();
-      // Throttle identical state updates to once per 8s, but always allow state changes
-      if (online === currentOnline.current && now - lastUpdate.current < 8000) return;
+      // Throttle: نفس الحالة ما تتبعت أكثر من مرة كل 8 ثواني
+      if (online === currentOnline.current && now - lastUpdate.current < 8000)
+        return;
       currentOnline.current = online;
       lastUpdate.current = now;
-      await supabase
-        .from("profiles")
-        .update({ is_online: online, last_seen: new Date().toISOString() })
-        .eq("id", user.id);
+
+      // ✅ try/catch: لو العمود is_online مش موجود لأي سبب، التطبيق يكمل
+      try {
+        await supabase
+          .from("profiles")
+          .update({ is_online: online, last_seen: new Date().toISOString() })
+          .eq("id", user.id);
+      } catch (err) {
+        console.warn("[useOnlineStatus] تعذّر تحديث الحالة:", err);
+      }
     };
 
-    // Mark online immediately
+    // سجّل كـ online فورًا
     setOnlineDb(true);
 
     // Presence channel (global)
@@ -38,16 +48,19 @@ export const useOnlineStatus = () => {
 
     channel
       .on("presence", { event: "sync" }, () => {
-        // no-op: presence state available via channel.presenceState()
+        // no-op
       })
       .subscribe(async (status) => {
         if (status === "SUBSCRIBED") {
-          await channel.track({ user_id: user.id, online_at: new Date().toISOString() });
+          await channel.track({
+            user_id: user.id,
+            online_at: new Date().toISOString(),
+          });
           setOnlineDb(true);
         }
       });
 
-    // Heartbeat as a safety net (every 30s)
+    // Heartbeat كل 30 ثانية كـ safety net
     const interval = setInterval(() => setOnlineDb(true), 30000);
 
     const handleVisibility = () => {
@@ -56,28 +69,38 @@ export const useOnlineStatus = () => {
         channel.untrack();
       } else {
         setOnlineDb(true);
-        channel.track({ user_id: user.id, online_at: new Date().toISOString() });
+        channel.track({
+          user_id: user.id,
+          online_at: new Date().toISOString(),
+        });
       }
     };
 
     const handleFocus = () => {
       setOnlineDb(true);
-      channel.track({ user_id: user.id, online_at: new Date().toISOString() });
+      channel.track({
+        user_id: user.id,
+        online_at: new Date().toISOString(),
+      });
     };
 
     const handleBlur = () => {
-      // Don't mark offline on blur alone (user may switch windows briefly)
+      // ما نعمل offline على blur لوحده — اليوزر ممكن يكون بدّل نافذة بس
     };
 
     const handleBeforeUnload = () => {
-      // Best-effort sync offline mark
+      // ✅ try/catch هنا كمان
       try {
         const url = `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/profiles?id=eq.${user.id}`;
         const blob = new Blob(
-          [JSON.stringify({ is_online: false, last_seen: new Date().toISOString() })],
+          [
+            JSON.stringify({
+              is_online: false,
+              last_seen: new Date().toISOString(),
+            }),
+          ],
           { type: "application/json" }
         );
-        // Note: PATCH via sendBeacon is not standard; fall back to fetch with keepalive
         fetch(url, {
           method: "PATCH",
           headers: {
@@ -89,7 +112,9 @@ export const useOnlineStatus = () => {
           body: blob,
           keepalive: true,
         }).catch(() => {});
-      } catch {}
+      } catch {
+        // تجاهل أي خطأ — best-effort فقط
+      }
     };
 
     document.addEventListener("visibilitychange", handleVisibility);
@@ -111,7 +136,7 @@ export const useOnlineStatus = () => {
     };
   }, [user?.id]);
 
-  // Mark unread chat messages as delivered on app open
+  // ✅ تحديث رسائل الشات كـ delivered عند فتح التطبيق
   useEffect(() => {
     if (!user?.id) return;
     supabase
@@ -119,6 +144,10 @@ export const useOnlineStatus = () => {
       .update({ status: "delivered" })
       .eq("status", "sent")
       .neq("sender_id", user.id)
-      .then(() => {});
+      .then(({ error }) => {
+        if (error) {
+          console.warn("[useOnlineStatus] تعذّر تحديث حالة الرسائل:", error.message);
+        }
+      });
   }, [user?.id]);
 };
