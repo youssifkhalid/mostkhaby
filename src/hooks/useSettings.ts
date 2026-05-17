@@ -4,7 +4,10 @@ import { useAuth } from "./useAuth";
 import { toast } from "sonner";
 
 const SETTINGS_COLS =
-  "user_id,theme,allow_anonymous,allow_follows,allow_replies,push_notifications,email_notifications,show_last_seen,show_online,hide_from_search,allow_images,auto_block_offensive,social_visibility,language,notification_sound,notification_volume,vibration_enabled,notification_preview,in_app_sound_enabled";
+  "user_id,theme,allow_anonymous,allow_follows,allow_replies,push_notifications," +
+  "email_notifications,show_last_seen,show_online,hide_from_search,allow_images," +
+  "auto_block_offensive,social_visibility,language,notification_sound," +
+  "notification_volume,vibration_enabled,notification_preview,in_app_sound_enabled";
 
 export const useSettings = () => {
   const { user } = useAuth();
@@ -15,7 +18,7 @@ export const useSettings = () => {
     queryFn: async () => {
       if (!user?.id) return null;
 
-      // الخطوة 1: نجيب الـ settings الموجودة
+      // 1. نجيب الـ settings لو موجودة
       const { data, error } = await supabase
         .from("user_settings")
         .select(SETTINGS_COLS)
@@ -23,30 +26,26 @@ export const useSettings = () => {
         .maybeSingle();
 
       if (error) {
-        console.error("[useSettings] خطأ في جلب الإعدادات:", error.message);
+        console.error("[useSettings] خطأ:", error.message);
         return null;
       }
 
-      // موجودة — نرجعها
       if (data) return data;
 
-      // ✅ مش موجودة — لكن نتأكد إن الـ profile موجود الأول
-      // سبب الـ foreign key error: التطبيق بيحاول يعمل user_settings
-      // قبل ما تريجر handle_new_user يخلص ويعمل الـ profiles row
+      // 2. مش موجودة — نتأكد إن الـ profile موجود الأول
+      // (التريجر handle_new_user ممكن يكون لسه شغّال)
       const { data: profile } = await supabase
         .from("profiles")
         .select("id")
         .eq("id", user.id)
         .maybeSingle();
 
-      // لو الـ profile مش موجود لسه، نرجع null بهدوء ونخلي الـ retry يشتغل
       if (!profile) {
-        console.warn("[useSettings] profile مش موجود لسه، هنحاول تاني...");
-        // نرجع error عشان react-query يعمل retry
+        // profile لسه ما اتعملش — نعمل retry بعد 1.5 ثانية
         throw new Error("profile_not_ready");
       }
 
-      // الـ profile موجود — نعمل settings
+      // 3. profile موجود — نعمل INSERT للـ settings
       const { data: created, error: insertErr } = await supabase
         .from("user_settings")
         .insert({ user_id: user.id })
@@ -54,9 +53,12 @@ export const useSettings = () => {
         .single();
 
       if (insertErr) {
-        // 23505 = duplicate key — اتعملت من component تاني في نفس الوقت
-        if (insertErr.code === "23505" || insertErr.message?.includes("duplicate") || insertErr.message?.includes("conflict")) {
-          // نجيبها بـ select عادي
+        // 23505 = duplicate key: component تاني عمل insert في نفس الوقت
+        if (
+          insertErr.code === "23505" ||
+          insertErr.message?.includes("duplicate") ||
+          insertErr.message?.includes("conflict")
+        ) {
           const { data: existing } = await supabase
             .from("user_settings")
             .select(SETTINGS_COLS)
@@ -76,8 +78,8 @@ export const useSettings = () => {
     refetchOnWindowFocus: false,
     refetchOnMount: false,
     refetchOnReconnect: false,
-    // ✅ retry مع delay — لو الـ profile مش جاهز بعد، ننتظر شوية
     retry: (failureCount, error: any) => {
+      // لو الـ profile مش جاهز بعد، نعمل retry لحد 5 مرات
       if (error?.message === "profile_not_ready") return failureCount < 5;
       return false;
     },
@@ -96,7 +98,10 @@ export const useSettings = () => {
     onMutate: async (updates) => {
       await queryClient.cancelQueries({ queryKey: ["user-settings", user?.id] });
       const prev = queryClient.getQueryData(["user-settings", user?.id]);
-      queryClient.setQueryData(["user-settings", user?.id], (old: any) => ({ ...old, ...updates }));
+      queryClient.setQueryData(["user-settings", user?.id], (old: any) => ({
+        ...old,
+        ...updates,
+      }));
       return { prev };
     },
     onError: (_err, _vars, ctx) => {

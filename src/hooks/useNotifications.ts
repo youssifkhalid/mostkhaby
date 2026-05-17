@@ -1,20 +1,27 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
-import { useEffect, useRef, useMemo } from "react";
-import { useSettings } from "./useSettings";
-import { playNotificationSound, vibrate } from "@/lib/notificationSounds";
+import { useMemo } from "react";
 
+/**
+ * ✅ useNotifications — بيانات بس، صفر Realtime هنا
+ *
+ * المشكلة القديمة:
+ *   الـ hook ده بيتنادى من 3 أماكن في نفس الوقت:
+ *   BottomNav + TopBar + NotificationsPage
+ *   كل واحد كان بيعمل channel بنفس الاسم.
+ *   لما settings بتتجيب من الداتابيز، كانت في الـ deps
+ *   فالـ useEffect بيشتغل تاني → بيحاول يضيف .on() على
+ *   channel اتـ subscribe بالفعل → كراش.
+ *
+ * الحل:
+ *   شيلنا الـ Realtime من هنا خالص.
+ *   الـ Realtime موجود في GlobalMessageListener بس —
+ *   مكان واحد، channel واحد، بيشتغل مرة واحدة.
+ */
 export const useNotifications = () => {
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const { settings } = useSettings();
-
-  // ✅ نحفظ settings في ref — عشان الـ channel ما يعيدش subscribe كل ما تتغير
-  const settingsRef = useRef(settings);
-  useEffect(() => {
-    settingsRef.current = settings;
-  }, [settings]);
 
   const { data: notifications = [], isLoading } = useQuery({
     queryKey: ["notifications", user?.id],
@@ -35,49 +42,12 @@ export const useNotifications = () => {
     refetchOnWindowFocus: false,
   });
 
-  // ✅ channel واحد بس — بيتعمل مرة واحدة لما يتغير user?.id فقط
-  // الـ .on("INSERT") و .on("UPDATE") على نفس الـ channel قبل .subscribe() — ده صح
-  // المشكلة القديمة كانت إن الـ useEffect كان بيتشغل مرة تانية بسبب settings في الـ deps
-  // فكان بيحاول يضيف .on() على channel اتـ subscribe بالفعل
-  useEffect(() => {
-    if (!user?.id) return;
-
-    const channel = supabase
-      .channel(`notifications-${user.id}`)
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "notifications", filter: `user_id=eq.${user.id}` },
-        (payload) => {
-          queryClient.setQueryData(["notifications", user.id], (old: any[]) => {
-            if (!old) return [payload.new];
-            if (old.some((n: any) => n.id === payload.new.id)) return old;
-            return [payload.new, ...old];
-          });
-          // نقرأ من الـ ref مش من الـ closure
-          const s: any = settingsRef.current;
-          if (!s || s.in_app_sound_enabled !== false)
-            playNotificationSound(s?.notification_sound || "default", s?.notification_volume ?? 80);
-          if (!s || s.vibration_enabled !== false)
-            vibrate([60, 40, 60]);
-        }
-      )
-      .on(
-        "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "notifications", filter: `user_id=eq.${user.id}` },
-        (payload) => {
-          queryClient.setQueryData(["notifications", user.id], (old: any[]) =>
-            old?.map((n: any) => n.id === payload.new.id ? { ...n, ...payload.new } : n)
-          );
-        }
-      )
-      .subscribe();
-
-    return () => { supabase.removeChannel(channel); };
-  }, [user?.id]); // ✅ user?.id فقط — مش settings
-
   const markAsRead = useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase.from("notifications").update({ is_read: true }).eq("id", id);
+      const { error } = await supabase
+        .from("notifications")
+        .update({ is_read: true })
+        .eq("id", id);
       if (error) throw error;
     },
     onMutate: async (id) => {
@@ -91,8 +61,10 @@ export const useNotifications = () => {
     mutationFn: async () => {
       if (!user?.id) return;
       const { error } = await supabase
-        .from("notifications").update({ is_read: true })
-        .eq("user_id", user.id).eq("is_read", false);
+        .from("notifications")
+        .update({ is_read: true })
+        .eq("user_id", user.id)
+        .eq("is_read", false);
       if (error) throw error;
     },
     onMutate: () => {
