@@ -952,17 +952,21 @@ const ChatPage = () => {
         {viewerUrl && <ImageViewer url={viewerUrl} onClose={() => setViewerUrl(null)} />}
       </AnimatePresence>
 
-      {/* ──── Nickname Dialog ──── */}
+         {/* ──── Nickname Dialog ──── */}
       {otherUserId && (
-        <NicknameDialog open={showNickname} onClose={() => setShowNickname(false)}
-          contactId={otherUserId} realName={realName}
+        <NicknameDialog
+          open={showNickname}
+          onClose={() => setShowNickname(false)}
+          contactId={otherUserId}
+          realName={realName}
           currentNickname={nicknames[otherUserId]}
-
-
-
-
-export default ChatPage;
-          onSave={(n) => setNickname.mutate({ contactId: otherUserId, nickname: n })} />
+          onSave={(n) =>
+            setNickname.mutate({
+              contactId: otherUserId,
+              nickname: n,
+            })
+          }
+        />
       )}
     </div>
   );
