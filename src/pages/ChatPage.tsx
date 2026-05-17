@@ -1,3 +1,4 @@
+
 import { motion, AnimatePresence, useMotionValue, useTransform, animate } from "framer-motion";
 import { useState, useRef, useEffect, useCallback, memo } from "react";
 import {
@@ -955,7 +956,7 @@ const ChatPage = () => {
       {otherUserId && (
         <NicknameDialog open={showNickname} onClose={() => setShowNickname(false)}
           contactId={otherUserId} realName={realName}
-          currentNickname={nicknames[otherUserId]}import { motion, AnimatePresence, useMotionValue, useTransform, animate } from "framer-motion";
+          currentNickname={nicknames[otherUserId]}
 import { useState, useRef, useEffect, useCallback, memo } from "react";
 import {
   ArrowRight, Send, Loader2, MoreVertical, Ban, Trash2, X,
