@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useCallback } from "react";
+import { useEffect, useMemo, useCallback, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -11,24 +11,18 @@ type UnreadRow = {
   is_deleted: boolean | null;
 };
 
-/**
- * Loads unread messages for current user and exposes:
- *  - totalUnread: number
- *  - unreadPerChat: Map<chatId, count>
- *  - clearChatUnread(chatId): clears cache + marks DB as read
- *
- * Realtime additions are pushed into the same cache key
- * by GlobalMessageListener (["unread-messages", user.id]).
- */
 export const useUnreadMessages = () => {
   const { user } = useAuth();
   const qc = useQueryClient();
+
+  // ✅ qc في ref — مش في deps — عشان الـ channel ما يعيدش subscribe
+  const qcRef = useRef(qc);
+  useEffect(() => { qcRef.current = qc; }, [qc]);
 
   const { data: unread = [] } = useQuery<UnreadRow[]>({
     queryKey: ["unread-messages", user?.id],
     queryFn: async () => {
       if (!user?.id) return [];
-      // Find chats the user participates in
       const { data: chats } = await supabase
         .from("chats")
         .select("id")
@@ -52,7 +46,7 @@ export const useUnreadMessages = () => {
     refetchOnWindowFocus: true,
   });
 
-  // Live refresh when messages change
+  // ✅ الـ channel بيتعمل مرة واحدة بس — deps = [user?.id] فقط
   useEffect(() => {
     if (!user?.id) return;
     const ch = supabase
@@ -64,17 +58,16 @@ export const useUnreadMessages = () => {
           const m = payload.new;
           if (!m) return;
           if (m.status === "read" || m.is_deleted) {
-            qc.setQueryData(["unread-messages", user.id], (old: UnreadRow[] = []) =>
-              old.filter((r) => r.id !== m.id)
+            qcRef.current.setQueryData(
+              ["unread-messages", user.id],
+              (old: UnreadRow[] = []) => old.filter((r) => r.id !== m.id)
             );
           }
         }
       )
       .subscribe();
-    return () => {
-      supabase.removeChannel(ch);
-    };
-  }, [user?.id, qc]);
+    return () => { supabase.removeChannel(ch); };
+  }, [user?.id]); // ✅ user?.id فقط — مش qc
 
   const unreadPerChat = useMemo(() => {
     const map = new Map<string, number>();
@@ -89,11 +82,10 @@ export const useUnreadMessages = () => {
   const clearChatUnread = useCallback(
     async (chatId: string) => {
       if (!user?.id) return;
-      // Optimistic
-      qc.setQueryData(["unread-messages", user.id], (old: UnreadRow[] = []) =>
-        old.filter((m) => m.chat_id !== chatId)
+      qcRef.current.setQueryData(
+        ["unread-messages", user.id],
+        (old: UnreadRow[] = []) => old.filter((m) => m.chat_id !== chatId)
       );
-      // DB
       await supabase
         .from("chat_messages")
         .update({ status: "read" })
@@ -101,7 +93,7 @@ export const useUnreadMessages = () => {
         .neq("sender_id", user.id)
         .neq("status", "read");
     },
-    [user?.id, qc]
+    [user?.id]
   );
 
   return { unread, totalUnread, unreadPerChat, clearChatUnread };
