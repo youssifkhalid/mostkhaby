@@ -5,16 +5,17 @@ import { useSettings } from "@/hooks/useSettings";
 import { playNotificationSound, vibrate } from "@/lib/notificationSounds";
 import { useQueryClient } from "@tanstack/react-query";
 
+// ✅ CHAT_SELECT محتفظ بـ is_online — آمن بعد ما شغّلت السكريبت SQL
 const CHAT_SELECT =
   "id,user1_id,user2_id,last_message_at,last_message_content,deleted_by,cleared_before," +
   "user1:profiles!chats_user1_id_fkey(id,username,full_name,avatar_url,is_online,last_seen)," +
   "user2:profiles!chats_user2_id_fkey(id,username,full_name,avatar_url,is_online,last_seen)";
 
 /**
- * Global listener for new chat messages.
- * - Plays sound + vibrates
- * - Adds brand-new chats to the cache (so they appear in ChatsPage immediately)
- * - Updates unread-messages cache so badges stay accurate
+ * Listener عالمي لرسائل الشات الجديدة.
+ * - يشغّل صوت + اهتزاز
+ * - يضيف chats جديدة للـ cache فورًا (تظهر في ChatsPage على طول)
+ * - يحدّث unread-messages cache عشان الـ badges تبقى دقيقة
  */
 const GlobalMessageListener = () => {
   const { user } = useAuth();
@@ -33,45 +34,65 @@ const GlobalMessageListener = () => {
           const msg = payload.new;
           if (!msg || msg.sender_id === user.id) return;
 
-          const onSameChat = window.location.pathname === `/chat/${msg.chat_id}`;
+          const onSameChat =
+            window.location.pathname === `/chat/${msg.chat_id}`;
 
-          // ── 1. Sound + vibration ──────────────────────────────────────
+          // ── 1. صوت + اهتزاز ──────────────────────────────────────
           if (!onSameChat) {
             const s: any = settings;
             if (!s || s.in_app_sound_enabled !== false) {
-              playNotificationSound(s?.notification_sound || "default", s?.notification_volume ?? 80);
+              playNotificationSound(
+                s?.notification_sound || "default",
+                s?.notification_volume ?? 80
+              );
             }
             if (!s || s.vibration_enabled !== false) vibrate([60, 40, 60]);
           }
 
-          // ── 2. Make sure the chat exists in cache ─────────────────────
-          // If this is the very first message from a new friend, the chat
-          // row may not be in the chats cache yet → fetch and inject it.
-          const currentChats: any[] = qc.getQueryData(["chats", user.id]) || [];
-          const chatAlreadyInList = currentChats.some((c: any) => c.id === msg.chat_id);
+          // ── 2. ضمان وجود الـ chat في الـ cache ───────────────────
+          // لو أول رسالة من صاحب جديد، ممكن الـ chat مش موجود في القائمة
+          const currentChats: any[] =
+            qc.getQueryData(["chats", user.id]) || [];
+          const chatAlreadyInList = currentChats.some(
+            (c: any) => c.id === msg.chat_id
+          );
 
           if (!chatAlreadyInList) {
-            const { data: newChat } = await supabase
-              .from("chats")
-              .select(CHAT_SELECT)
-              .eq("id", msg.chat_id)
-              .single();
+            // ✅ try/catch: لو جدول chats مش موجود لأي سبب، ما يكرشش
+            try {
+              const { data: newChat, error } = await supabase
+                .from("chats")
+                .select(CHAT_SELECT)
+                .eq("id", msg.chat_id)
+                .single();
 
-            if (newChat && !(newChat.deleted_by || []).includes(user.id)) {
-              qc.setQueryData(["chats", user.id], (old: any[]) => {
-                const list = old || [];
-                if (list.some((c: any) => c.id === newChat.id)) return list;
-                return [newChat, ...list];
-              });
+              if (error) {
+                console.warn("[GlobalMessageListener] تعذّر جلب الشات:", error.message);
+              } else if (
+                newChat &&
+                !(newChat.deleted_by || []).includes(user.id)
+              ) {
+                qc.setQueryData(["chats", user.id], (old: any[]) => {
+                  const list = old || [];
+                  if (list.some((c: any) => c.id === newChat.id)) return list;
+                  return [newChat, ...list];
+                });
+              }
+            } catch (err) {
+              console.warn("[GlobalMessageListener] خطأ غير متوقع:", err);
             }
           } else {
-            // Chat exists — just update last_message fields in cache
+            // الـ chat موجود — فقط حدّث آخر رسالة في الـ cache
             qc.setQueryData(["chats", user.id], (old: any[]) => {
               if (!old) return old;
               return old
                 .map((c: any) =>
                   c.id === msg.chat_id
-                    ? { ...c, last_message_at: msg.created_at, last_message_content: msg.content }
+                    ? {
+                        ...c,
+                        last_message_at: msg.created_at,
+                        last_message_content: msg.content,
+                      }
                     : c
                 )
                 .sort(
@@ -82,8 +103,7 @@ const GlobalMessageListener = () => {
             });
           }
 
-          // ── 3. Update unread-messages cache ───────────────────────────
-          // Only count as unread when the user isn't viewing that chat
+          // ── 3. تحديث unread-messages cache ────────────────────────
           if (!onSameChat) {
             qc.setQueryData(["unread-messages", user.id], (old: any[]) => {
               const list = old || [];
@@ -104,7 +124,9 @@ const GlobalMessageListener = () => {
       )
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [user?.id, settings, qc]);
 
   return null;
