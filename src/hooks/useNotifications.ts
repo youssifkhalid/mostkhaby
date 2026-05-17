@@ -29,39 +29,83 @@ export const useNotifications = () => {
     refetchOnWindowFocus: false,
   });
 
+  // ✅ الحل: channel واحد لكل event بدل ما نحط اتنين .on() على نفس الـ channel
+  // السبب: Supabase Realtime بيرفض إضافة postgres_changes listener
+  // على channel بعد ما subscribe() اتعملت عليه.
+  // الحل = channel منفصل لكل event نوعه مختلف.
+
+  // Channel 1: INSERT — إشعارات جديدة (مع صوت واهتزاز)
   useEffect(() => {
     if (!user?.id) return;
-    const channel = supabase
-      .channel(`notifications-realtime-${user.id}`)
+
+    const insertChannel = supabase
+      .channel(`notifications-insert-${user.id}`)
       .on(
         "postgres_changes",
-        { event: "INSERT", schema: "public", table: "notifications", filter: `user_id=eq.${user.id}` },
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "notifications",
+          filter: `user_id=eq.${user.id}`,
+        },
         (payload) => {
-          queryClient.setQueryData(["notifications", user.id], (old: any[]) => {
-            if (!old) return [payload.new];
-            if (old.some((n: any) => n.id === payload.new.id)) return old;
-            return [payload.new, ...old];
-          });
-          // In-app sound + vibration
+          queryClient.setQueryData(
+            ["notifications", user.id],
+            (old: any[]) => {
+              if (!old) return [payload.new];
+              if (old.some((n: any) => n.id === payload.new.id)) return old;
+              return [payload.new, ...old];
+            }
+          );
+
+          // صوت + اهتزاز
           const s: any = settings;
           if (!s || s.in_app_sound_enabled !== false) {
-            playNotificationSound(s?.notification_sound || "default", s?.notification_volume ?? 80);
+            playNotificationSound(
+              s?.notification_sound || "default",
+              s?.notification_volume ?? 80
+            );
           }
           if (!s || s.vibration_enabled !== false) vibrate([60, 40, 60]);
         }
       )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(insertChannel);
+    };
+  }, [user?.id, queryClient, settings]);
+
+  // Channel 2: UPDATE — تحديث إشعار موجود (مثلًا is_read)
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const updateChannel = supabase
+      .channel(`notifications-update-${user.id}`)
       .on(
         "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "notifications", filter: `user_id=eq.${user.id}` },
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "notifications",
+          filter: `user_id=eq.${user.id}`,
+        },
         (payload) => {
-          queryClient.setQueryData(["notifications", user.id], (old: any[]) =>
-            old?.map((n: any) => n.id === payload.new.id ? { ...n, ...payload.new } : n)
+          queryClient.setQueryData(
+            ["notifications", user.id],
+            (old: any[]) =>
+              old?.map((n: any) =>
+                n.id === payload.new.id ? { ...n, ...payload.new } : n
+              )
           );
         }
       )
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [user?.id, queryClient, settings]);
+
+    return () => {
+      supabase.removeChannel(updateChannel);
+    };
+  }, [user?.id, queryClient]);
 
   const markAsRead = useMutation({
     mutationFn: async (id: string) => {
@@ -72,8 +116,10 @@ export const useNotifications = () => {
       if (error) throw error;
     },
     onMutate: async (id) => {
-      queryClient.setQueryData(["notifications", user?.id], (old: any[]) =>
-        old?.map((n) => (n.id === id ? { ...n, is_read: true } : n))
+      queryClient.setQueryData(
+        ["notifications", user?.id],
+        (old: any[]) =>
+          old?.map((n) => (n.id === id ? { ...n, is_read: true } : n))
       );
     },
   });
@@ -89,13 +135,17 @@ export const useNotifications = () => {
       if (error) throw error;
     },
     onMutate: () => {
-      queryClient.setQueryData(["notifications", user?.id], (old: any[]) =>
-        old?.map((n) => ({ ...n, is_read: true }))
+      queryClient.setQueryData(
+        ["notifications", user?.id],
+        (old: any[]) => old?.map((n) => ({ ...n, is_read: true }))
       );
     },
   });
 
-  const unreadCount = useMemo(() => notifications.filter((n) => !n.is_read).length, [notifications]);
+  const unreadCount = useMemo(
+    () => notifications.filter((n) => !n.is_read).length,
+    [notifications]
+  );
 
   return { notifications, isLoading, markAsRead, markAllAsRead, unreadCount };
 };
