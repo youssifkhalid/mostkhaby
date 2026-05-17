@@ -364,14 +364,18 @@ const ChatsPage = () => {
           ))}
         </div>
 
-        <AnimatePresence mode="wait">
-          {/* CHATS TAB */}
-          {activeTab === "chats" && (
-            <motion.div key="chats" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} className="space-y-3">
-              {!isLoading && chats.length > 0 && (
-              )}
+     <AnimatePresence mode="wait">
+  {/* CHATS TAB */}
+  {activeTab === "chats" && (
+    <motion.div
+      key="chats"
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -8 }}
+      className="space-y-3"
+    >
 
-              <div className="flex gap-2">
+      <div className="flex gap-2">
                 <div className="relative flex-1">
                   <Search size={15} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
                   <input value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="ابحث..."
