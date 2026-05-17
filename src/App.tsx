@@ -11,6 +11,7 @@ import AuthGuard from "@/components/AuthGuard";
 import { lazy, Suspense } from "react";
 import { Loader2 } from "lucide-react";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
+import { useAuth } from "@/hooks/useAuth";
 
 const Index = lazy(() => import("./pages/Index"));
 const ProfilePage = lazy(() => import("./pages/ProfilePage"));
@@ -49,15 +50,41 @@ function PageLoader() {
   );
 }
 
+// ✅ اتنقلت لجوة BrowserRouter وبتشتغل بس لما يكون في يوزر مسجّل
 function OnlineStatusSync() {
+  const { user } = useAuth();
   useOnlineStatus();
+  if (!user) return null;
   return null;
+}
+
+// ✅ كل الـ listeners والـ BottomNav اتحطوا هنا —
+//    بيشتغلوا بس لما يكون في يوزر معاه session
+function AuthenticatedShell({ children }: { children: React.ReactNode }) {
+  const { user, loading } = useAuth();
+
+  // لو لسه بيحمّل الـ session، ما نشغّلش أي حاجة
+  if (loading) return <>{children}</>;
+
+  // لو مفيش يوزر، بس نعرض الـ routes (صفحة auth مثلًا)
+  if (!user) return <>{children}</>;
+
+  // اليوزر موجود ✅ — شغّل كل الـ listeners
+  return (
+    <>
+      {children}
+      <OnlineStatusSync />
+      <IncomingCallListener />
+      <PushAutoSubscribe />
+      <GlobalMessageListener />
+      <BottomNav />
+    </>
+  );
 }
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <AuthProvider>
-      <OnlineStatusSync />
       <ThemeProvider>
         <LanguageProvider>
           <TooltipProvider>
@@ -65,29 +92,28 @@ const App = () => (
             <BrowserRouter>
               <FloatingBackground />
               <div className="relative z-10">
-                <Suspense fallback={<PageLoader />}>
-                  <Routes>
-                    <Route path="/auth" element={<AuthPage />} />
-                    <Route path="/about" element={<AboutPage />} />
-                    <Route path="/" element={<AuthGuard><Index /></AuthGuard>} />
-                    <Route path="/index" element={<AuthGuard><Index /></AuthGuard>} />
-                    <Route path="/profile" element={<AuthGuard><ProfilePage /></AuthGuard>} />
-                    <Route path="/inbox" element={<AuthGuard><ProfilePage /></AuthGuard>} />
-                    <Route path="/settings" element={<AuthGuard><SettingsPage /></AuthGuard>} />
-                    <Route path="/notifications" element={<AuthGuard><NotificationsPage /></AuthGuard>} />
-                    <Route path="/chats" element={<AuthGuard><ChatsPage /></AuthGuard>} />
-                    <Route path="/chat/:chatId" element={<AuthGuard><ChatPage /></AuthGuard>} />
-                    <Route path="/call/:chatId" element={<AuthGuard><CallPage /></AuthGuard>} />
-                    <Route path="/community" element={<AuthGuard><CommunityPage /></AuthGuard>} />
-                    <Route path="/send/:username" element={<SendMessagePage />} />
-                    <Route path="/:username" element={<SendMessagePage />} />
-                    <Route path="*" element={<NotFound />} />
-                  </Routes>
-                </Suspense>
-                <IncomingCallListener />
-                <PushAutoSubscribe />
-                <GlobalMessageListener />
-                <BottomNav />
+                {/* ✅ AuthenticatedShell بيلف كل حاجة عشان يتحكم في الـ listeners */}
+                <AuthenticatedShell>
+                  <Suspense fallback={<PageLoader />}>
+                    <Routes>
+                      <Route path="/auth" element={<AuthPage />} />
+                      <Route path="/about" element={<AboutPage />} />
+                      <Route path="/" element={<AuthGuard><Index /></AuthGuard>} />
+                      <Route path="/index" element={<AuthGuard><Index /></AuthGuard>} />
+                      <Route path="/profile" element={<AuthGuard><ProfilePage /></AuthGuard>} />
+                      <Route path="/inbox" element={<AuthGuard><ProfilePage /></AuthGuard>} />
+                      <Route path="/settings" element={<AuthGuard><SettingsPage /></AuthGuard>} />
+                      <Route path="/notifications" element={<AuthGuard><NotificationsPage /></AuthGuard>} />
+                      <Route path="/chats" element={<AuthGuard><ChatsPage /></AuthGuard>} />
+                      <Route path="/chat/:chatId" element={<AuthGuard><ChatPage /></AuthGuard>} />
+                      <Route path="/call/:chatId" element={<AuthGuard><CallPage /></AuthGuard>} />
+                      <Route path="/community" element={<AuthGuard><CommunityPage /></AuthGuard>} />
+                      <Route path="/send/:username" element={<SendMessagePage />} />
+                      <Route path="/:username" element={<SendMessagePage />} />
+                      <Route path="*" element={<NotFound />} />
+                    </Routes>
+                  </Suspense>
+                </AuthenticatedShell>
               </div>
             </BrowserRouter>
           </TooltipProvider>
