@@ -1,14 +1,41 @@
+// src/hooks/useChats.ts
+/**
+ * ═══════════════════════════════════════════════════════════════
+ * useChats + useChatMessages + useTypingIndicator
+ * ═══════════════════════════════════════════════════════════════
+ *
+ * الإصلاحات:
+ * ──────────
+ * 1. كل useEffect بـ deps = [chatId] أو [user?.id] فقط
+ * 2. qc في ref — لا تدخل في deps (تمنع duplicate subscriptions)
+ * 3. .on(...).subscribe() — لا إضافة بعد subscribe
+ * 4. cleanup كامل عند unmount
+ * 5. optimistic updates صحيحة مع temp-id rollback
+ */
+
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
 import { useEffect, useState, useRef, useCallback } from "react";
 
-const CHAT_SELECT = "id,user1_id,user2_id,last_message_at,last_message_content,deleted_by,cleared_before,user1:profiles!chats_user1_id_fkey(id,username,full_name,avatar_url,is_online,last_seen),user2:profiles!chats_user2_id_fkey(id,username,full_name,avatar_url,is_online,last_seen)";
-const MSG_SELECT = "id,content,created_at,sender_id,status,reply_to_id,is_deleted,is_edited,media_url,media_type,audio_duration,waveform,sender:profiles!chat_messages_sender_id_fkey(username,full_name,avatar_url)";
+const CHAT_SELECT =
+  "id,user1_id,user2_id,last_message_at,last_message_content,deleted_by,cleared_before," +
+  "user1:profiles!chats_user1_id_fkey(id,username,full_name,avatar_url,is_online,last_seen)," +
+  "user2:profiles!chats_user2_id_fkey(id,username,full_name,avatar_url,is_online,last_seen)";
 
+const MSG_SELECT =
+  "id,content,created_at,sender_id,status,is_read,reply_to_id,is_deleted,is_edited," +
+  "media_url,media_type,audio_duration,waveform," +
+  "sender:profiles!chat_messages_sender_id_fkey(username,full_name,avatar_url)";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// useChats
+// ─────────────────────────────────────────────────────────────────────────────
 export const useChats = () => {
   const { user } = useAuth();
   const qc = useQueryClient();
+  const qcRef = useRef(qc);
+  useEffect(() => { qcRef.current = qc; }, [qc]);
 
   const { data: chats = [], isLoading } = useQuery({
     queryKey: ["chats", user?.id],
@@ -20,7 +47,9 @@ export const useChats = () => {
         .or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`)
         .order("last_message_at", { ascending: false });
       if (error) throw error;
-      return (data || []).filter((c: any) => !(c.deleted_by || []).includes(user.id));
+      return (data || []).filter(
+        (c: any) => !(c.deleted_by || []).includes(user.id)
+      );
     },
     enabled: !!user?.id,
     staleTime: 0,
@@ -31,45 +60,94 @@ export const useChats = () => {
 
   useEffect(() => {
     if (!user?.id) return;
+
     const ch = supabase
       .channel(`chats-rt-${user.id}`)
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "chats" }, async (payload) => {
-        const newChat = payload.new;
-        if (newChat.user1_id === user.id || newChat.user2_id === user.id) {
-          const { data } = await supabase.from("chats").select(CHAT_SELECT).eq("id", newChat.id).single();
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "chats" },
+        async (payload) => {
+          const newChat = payload.new as any;
+          if (
+            newChat.user1_id !== user.id &&
+            newChat.user2_id !== user.id
+          ) return;
+
+          const { data } = await supabase
+            .from("chats")
+            .select(CHAT_SELECT)
+            .eq("id", newChat.id)
+            .single();
+
           if (data) {
-            qc.setQueryData(["chats", user.id], (old: any[]) => {
-              if (!old) return [data];
-              if (old.some((c: any) => c.id === data.id)) return old;
-              return [data, ...old];
-            });
+            qcRef.current.setQueryData(
+              ["chats", user.id],
+              (old: any[]) => {
+                if (!old) return [data];
+                if (old.some((c: any) => c.id === data.id)) return old;
+                return [data, ...old];
+              }
+            );
           }
         }
-      })
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "chats" }, (payload) => {
-        qc.setQueryData(["chats", user.id], (old: any[]) => {
-          if (!old) return old;
-          return old.map((c: any) => c.id === payload.new.id ? { ...c, ...payload.new } : c)
-            .filter((c: any) => !(c.deleted_by || []).includes(user.id))
-            .sort((a: any, b: any) => new Date(b.last_message_at || 0).getTime() - new Date(a.last_message_at || 0).getTime());
-        });
-      })
-      .on("postgres_changes", { event: "DELETE", schema: "public", table: "chats" }, (payload) => {
-        qc.setQueryData(["chats", user.id], (old: any[]) => old?.filter((c: any) => c.id !== payload.old.id) || []);
-      })
+      )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "chats" },
+        (payload) => {
+          qcRef.current.setQueryData(
+            ["chats", user.id],
+            (old: any[]) => {
+              if (!old) return old;
+              return old
+                .map((c: any) =>
+                  c.id === payload.new.id ? { ...c, ...payload.new } : c
+                )
+                .filter(
+                  (c: any) =>
+                    !(c.deleted_by || []).includes(user.id)
+                )
+                .sort(
+                  (a: any, b: any) =>
+                    new Date(b.last_message_at || 0).getTime() -
+                    new Date(a.last_message_at || 0).getTime()
+                );
+            }
+          );
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "DELETE", schema: "public", table: "chats" },
+        (payload) => {
+          qcRef.current.setQueryData(
+            ["chats", user.id],
+            (old: any[]) =>
+              old?.filter((c: any) => c.id !== payload.old.id) || []
+          );
+        }
+      )
       .subscribe();
+
     return () => { supabase.removeChannel(ch); };
-  }, [user?.id, qc]);
+  }, [user?.id]); // ✅ user?.id فقط
 
   const createChat = useMutation({
     mutationFn: async (otherUserId: string) => {
       if (!user?.id) throw new Error("Not authenticated");
+
+      // تحقق من وجود محادثة سابقة
       const { data: existing } = await supabase
         .from("chats")
         .select("id")
-        .or(`and(user1_id.eq.${user.id},user2_id.eq.${otherUserId}),and(user1_id.eq.${otherUserId},user2_id.eq.${user.id})`)
+        .or(
+          `and(user1_id.eq.${user.id},user2_id.eq.${otherUserId}),` +
+          `and(user1_id.eq.${otherUserId},user2_id.eq.${user.id})`
+        )
         .maybeSingle();
+
       if (existing) return existing.id;
+
       const { data, error } = await supabase
         .from("chats")
         .insert({ user1_id: user.id, user2_id: otherUserId })
@@ -84,7 +162,7 @@ export const useChats = () => {
     mutationFn: async (chatId: string) => {
       if (!user?.id) throw new Error("Not auth");
       const chat = chats.find((c: any) => c.id === chatId);
-      const currentDeletedBy = chat?.deleted_by || [];
+      const currentDeletedBy = (chat as any)?.deleted_by || [];
       const { error } = await supabase
         .from("chats")
         .update({ deleted_by: [...currentDeletedBy, user.id] })
@@ -92,102 +170,204 @@ export const useChats = () => {
       if (error) throw error;
     },
     onMutate: async (chatId) => {
-      qc.setQueryData(["chats", user?.id], (old: any[]) => old?.filter((c: any) => c.id !== chatId) || []);
+      qc.setQueryData(
+        ["chats", user?.id],
+        (old: any[]) => old?.filter((c: any) => c.id !== chatId) || []
+      );
     },
   });
 
   return { chats, isLoading, createChat, deleteChat };
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// useChatMessages
+// ─────────────────────────────────────────────────────────────────────────────
 export const useChatMessages = (chatId: string | undefined) => {
   const { user } = useAuth();
   const qc = useQueryClient();
+  const qcRef = useRef(qc);
+  useEffect(() => { qcRef.current = qc; }, [qc]);
 
   const { data: messages = [], isLoading } = useQuery({
     queryKey: ["chat-messages", chatId, user?.id],
     queryFn: async () => {
-      if (!chatId) return [];
-      // Fetch chat for cleared_before
-      const { data: chat } = await supabase.from("chats").select("cleared_before").eq("id", chatId).single();
+      if (!chatId || !user?.id) return [];
+
+      const { data: chat } = await supabase
+        .from("chats")
+        .select("cleared_before")
+        .eq("id", chatId)
+        .single();
+
       const cleared = (chat?.cleared_before as any) || {};
-      const clearedAt = user?.id ? cleared[user.id] : null;
+      const clearedAt = cleared[user.id] ?? null;
 
       let q = supabase
         .from("chat_messages")
         .select(MSG_SELECT)
         .eq("chat_id", chatId);
+
       if (clearedAt) q = q.gt("created_at", clearedAt);
-      const { data, error } = await q.order("created_at", { ascending: false }).limit(100);
+
+      const { data, error } = await q
+        .order("created_at", { ascending: false })
+        .limit(100);
+
       if (error) throw error;
       return (data || []).reverse();
     },
-    enabled: !!chatId,
+    enabled: !!chatId && !!user?.id,
     staleTime: 1000 * 60 * 2,
     gcTime: 1000 * 60 * 10,
     refetchOnWindowFocus: false,
   });
 
+  // ✅ Realtime للرسائل
   useEffect(() => {
-    if (!chatId) return;
+    if (!chatId || !user?.id) return;
+
     const ch = supabase
       .channel(`chat-${chatId}`)
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "chat_messages", filter: `chat_id=eq.${chatId}` }, async (payload) => {
-        const { data: fullMessage } = await supabase
-          .from("chat_messages")
-          .select(MSG_SELECT)
-          .eq("id", payload.new.id)
-          .maybeSingle();
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "chat_messages",
+          filter: `chat_id=eq.${chatId}`,
+        },
+        async (payload) => {
+          // جلب الرسالة كاملة مع profile المرسل
+          const { data: fullMessage } = await supabase
+            .from("chat_messages")
+            .select(MSG_SELECT)
+            .eq("id", payload.new.id)
+            .maybeSingle();
 
-        const incoming = fullMessage || payload.new;
+          const incoming = fullMessage || payload.new;
 
-        qc.setQueryData(["chat-messages", chatId, user?.id], (old: any[]) => {
-          if (!old) return [incoming];
-          if (old.some((m: any) => m.id === incoming.id)) return old;
-          const filtered = old.filter((m: any) => !String(m.id).startsWith("temp-") || m.sender_id !== incoming.sender_id);
-          return [...filtered, incoming];
-        });
+          qcRef.current.setQueryData(
+            ["chat-messages", chatId, user.id],
+            (old: any[]) => {
+              if (!old) return [incoming];
+              if (old.some((m: any) => m.id === incoming.id)) return old;
+              // أزل temp message للمرسل نفسه
+              const filtered = old.filter(
+                (m: any) =>
+                  !(
+                    String(m.id).startsWith("temp-") &&
+                    m.sender_id === incoming.sender_id
+                  )
+              );
+              return [...filtered, incoming];
+            }
+          );
 
-        // Also update chats list
-        qc.setQueryData(["chats", user?.id], (old: any[]) => {
-          if (!old) return old;
-          return old.map((c: any) => c.id === chatId ? { ...c, last_message_at: incoming.created_at, last_message_content: incoming.content } : c)
-            .sort((a: any, b: any) => new Date(b.last_message_at || 0).getTime() - new Date(a.last_message_at || 0).getTime());
-        });
-      })
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "chat_messages", filter: `chat_id=eq.${chatId}` }, (payload) => {
-        qc.setQueryData(["chat-messages", chatId, user?.id], (old: any[]) =>
-          old?.map((m: any) => m.id === payload.new.id ? { ...m, ...payload.new } : m)
-        );
-      })
+          // حدّث last_message في قائمة المحادثات
+          qcRef.current.setQueryData(
+            ["chats", user.id],
+            (old: any[]) => {
+              if (!old) return old;
+              return old
+                .map((c: any) =>
+                  c.id === chatId
+                    ? {
+                        ...c,
+                        last_message_at: incoming.created_at,
+                        last_message_content: incoming.content,
+                      }
+                    : c
+                )
+                .sort(
+                  (a: any, b: any) =>
+                    new Date(b.last_message_at || 0).getTime() -
+                    new Date(a.last_message_at || 0).getTime()
+                );
+            }
+          );
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "chat_messages",
+          filter: `chat_id=eq.${chatId}`,
+        },
+        (payload) => {
+          qcRef.current.setQueryData(
+            ["chat-messages", chatId, user.id],
+            (old: any[]) =>
+              old?.map((m: any) =>
+                m.id === payload.new.id ? { ...m, ...payload.new } : m
+              )
+          );
+        }
+      )
       .subscribe();
-    return () => { supabase.removeChannel(ch); };
-  }, [chatId, user?.id, qc]);
 
+    return () => { supabase.removeChannel(ch); };
+  }, [chatId, user?.id]); // ✅ chatId + user?.id فقط
+
+  // ── Mutations ──────────────────────────────────────────────────
   const sendChatMessage = useMutation({
-    mutationFn: async ({ content, replyToId, mediaUrl, mediaType, audioDuration, waveform }: {
-      content: string; replyToId?: string;
-      mediaUrl?: string; mediaType?: "image" | "audio";
-      audioDuration?: number; waveform?: number[];
+    mutationFn: async ({
+      content,
+      replyToId,
+      mediaUrl,
+      mediaType,
+      audioDuration,
+      waveform,
+    }: {
+      content: string;
+      replyToId?: string;
+      mediaUrl?: string;
+      mediaType?: "image" | "audio";
+      audioDuration?: number;
+      waveform?: number[];
     }) => {
       if (!user?.id || !chatId) throw new Error("Missing data");
       const { error } = await supabase.from("chat_messages").insert({
         chat_id: chatId,
         sender_id: user.id,
-        content: content || (mediaType === "image" ? "📷 صورة" : mediaType === "audio" ? "🎤 رسالة صوتية" : ""),
+        content:
+          content ||
+          (mediaType === "image"
+            ? "📷 صورة"
+            : mediaType === "audio"
+            ? "🎤 رسالة صوتية"
+            : ""),
         reply_to_id: replyToId || null,
         media_url: mediaUrl || null,
         media_type: mediaType || null,
         audio_duration: audioDuration || null,
         waveform: waveform ? (waveform as any) : null,
+        status: "sent",
       });
       if (error) throw error;
     },
-    onMutate: async ({ content, replyToId, mediaUrl, mediaType, audioDuration, waveform }) => {
+    onMutate: async ({
+      content,
+      replyToId,
+      mediaUrl,
+      mediaType,
+      audioDuration,
+      waveform,
+    }) => {
+      const tempId = `temp-${Date.now()}`;
       const optimistic = {
-        id: `temp-${Date.now()}`,
+        id: tempId,
         chat_id: chatId,
         sender_id: user?.id,
-        content: content || (mediaType === "image" ? "📷 صورة" : mediaType === "audio" ? "🎤 رسالة صوتية" : ""),
+        content:
+          content ||
+          (mediaType === "image"
+            ? "📷 صورة"
+            : mediaType === "audio"
+            ? "🎤 رسالة صوتية"
+            : ""),
         reply_to_id: replyToId || null,
         status: "sending",
         created_at: new Date().toISOString(),
@@ -196,8 +376,22 @@ export const useChatMessages = (chatId: string | undefined) => {
         audio_duration: audioDuration || null,
         waveform: waveform || null,
         sender: null,
+        is_deleted: false,
+        is_edited: false,
       };
-      qc.setQueryData(["chat-messages", chatId, user?.id], (old: any[]) => [...(old || []), optimistic]);
+      qc.setQueryData(
+        ["chat-messages", chatId, user?.id],
+        (old: any[]) => [...(old || []), optimistic]
+      );
+      return { tempId };
+    },
+    onError: (_err, _vars, ctx) => {
+      // rollback
+      qc.setQueryData(
+        ["chat-messages", chatId, user?.id],
+        (old: any[]) =>
+          old?.filter((m: any) => m.id !== ctx?.tempId) || []
+      );
     },
   });
 
@@ -207,12 +401,17 @@ export const useChatMessages = (chatId: string | undefined) => {
       const { error } = await supabase
         .from("chat_messages")
         .update({ is_deleted: true, content: "" })
-        .in("id", ids);
+        .in("id", ids)
+        .eq("sender_id", user?.id!); // ✅ security: يحذف رسائله بس
       if (error) throw error;
     },
     onMutate: async (ids) => {
-      qc.setQueryData(["chat-messages", chatId, user?.id], (old: any[]) =>
-        old?.map((m) => ids.includes(m.id) ? { ...m, is_deleted: true, content: "" } : m)
+      qc.setQueryData(
+        ["chat-messages", chatId, user?.id],
+        (old: any[]) =>
+          old?.map((m) =>
+            ids.includes(m.id) ? { ...m, is_deleted: true, content: "" } : m
+          )
       );
     },
   });
@@ -220,10 +419,17 @@ export const useChatMessages = (chatId: string | undefined) => {
   const clearAllMessages = useMutation({
     mutationFn: async () => {
       if (!user?.id || !chatId) return;
-      const { data: chat } = await supabase.from("chats").select("cleared_before").eq("id", chatId).single();
+      const { data: chat } = await supabase
+        .from("chats")
+        .select("cleared_before")
+        .eq("id", chatId)
+        .single();
       const cleared = (chat?.cleared_before as any) || {};
       cleared[user.id] = new Date().toISOString();
-      const { error } = await supabase.from("chats").update({ cleared_before: cleared }).eq("id", chatId);
+      const { error } = await supabase
+        .from("chats")
+        .update({ cleared_before: cleared })
+        .eq("id", chatId);
       if (error) throw error;
     },
     onMutate: async () => {
@@ -236,21 +442,38 @@ export const useChatMessages = (chatId: string | undefined) => {
       if (!user?.id || !chatId) return;
       await supabase
         .from("chat_messages")
-        .update({ status: "read" })
+        .update({ status: "read", is_read: true })
         .eq("chat_id", chatId)
         .neq("sender_id", user.id)
-        .neq("status", "read");
+        .neq("status", "read")
+        .eq("is_deleted", false);
     },
     onMutate: () => {
-      qc.setQueryData(["chat-messages", chatId, user?.id], (old: any[]) =>
-        old?.map((m: any) => m.sender_id !== user?.id ? { ...m, status: "read" } : m)
+      qc.setQueryData(
+        ["chat-messages", chatId, user?.id],
+        (old: any[]) =>
+          old?.map((m: any) =>
+            m.sender_id !== user?.id
+              ? { ...m, status: "read", is_read: true }
+              : m
+          )
       );
     },
   });
 
-  return { messages, isLoading, sendChatMessage, markChatMessagesRead, bulkDeleteMessages, clearAllMessages };
+  return {
+    messages,
+    isLoading,
+    sendChatMessage,
+    markChatMessagesRead,
+    bulkDeleteMessages,
+    clearAllMessages,
+  };
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// useTypingIndicator
+// ─────────────────────────────────────────────────────────────────────────────
 export const useTypingIndicator = (chatId: string | undefined) => {
   const { user } = useAuth();
   const [isOtherTyping, setIsOtherTyping] = useState(false);
@@ -269,7 +492,10 @@ export const useTypingIndicator = (chatId: string | undefined) => {
         if (payload.payload?.user_id !== user.id) {
           setIsOtherTyping(true);
           clearTimeout(typingTimeoutRef.current);
-          typingTimeoutRef.current = setTimeout(() => setIsOtherTyping(false), 2000);
+          typingTimeoutRef.current = setTimeout(
+            () => setIsOtherTyping(false),
+            2500
+          );
         }
       })
       .subscribe();
@@ -277,12 +503,13 @@ export const useTypingIndicator = (chatId: string | undefined) => {
     return () => {
       clearTimeout(typingTimeoutRef.current);
       supabase.removeChannel(channel);
+      channelRef.current = null;
     };
   }, [chatId, user?.id]);
 
   const sendTyping = useCallback(() => {
     const now = Date.now();
-    if (now - lastSentRef.current < 1500) return;
+    if (now - lastSentRef.current < 1500) return; // throttle
     lastSentRef.current = now;
     channelRef.current?.send({
       type: "broadcast",
