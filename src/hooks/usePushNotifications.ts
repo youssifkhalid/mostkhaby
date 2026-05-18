@@ -1,8 +1,22 @@
-import { useEffect, useState, useCallback } from "react";
+// src/hooks/usePushNotifications.ts
+/**
+ * ═══════════════════════════════════════════════════════════════
+ * usePushNotifications — نظام Push احترافي
+ * ═══════════════════════════════════════════════════════════════
+ *
+ * الإصلاحات:
+ * ──────────
+ * 1. Pre-check للـ VAPID endpoint — إذا 404 يعطّل Push بصمت كامل
+ * 2. لا console.error spam عند غياب الـ Edge Function
+ * 3. supported يرجع false إذا VAPID غير متاح
+ * 4. AbortSignal.timeout لمنع hanging requests
+ */
+
+import { useEffect, useState, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
 
-function urlBase64ToUint8Array(base64: string) {
+function urlBase64ToUint8Array(base64: string): Uint8Array {
   const padding = "=".repeat((4 - (base64.length % 4)) % 4);
   const b64 = (base64 + padding).replace(/-/g, "+").replace(/_/g, "/");
   const raw = atob(b64);
@@ -11,42 +25,111 @@ function urlBase64ToUint8Array(base64: string) {
   return out;
 }
 
+type VapidStatus = "checking" | "available" | "unavailable";
+
 export const usePushNotifications = () => {
   const { user } = useAuth();
   const [permission, setPermission] = useState<NotificationPermission>(
     typeof Notification !== "undefined" ? Notification.permission : "default"
   );
   const [isSubscribed, setIsSubscribed] = useState(false);
-  const [supported] = useState(
+  const [vapidStatus, setVapidStatus] = useState<VapidStatus>("checking");
+  const checkedRef = useRef(false);
+
+  const browserSupported =
     typeof window !== "undefined" &&
-      "serviceWorker" in navigator &&
-      "PushManager" in window &&
-      "Notification" in window
-  );
+    "serviceWorker" in navigator &&
+    "PushManager" in window &&
+    "Notification" in window;
 
-  // Register service worker once
+  // ── Register SW ──────────────────────────────────────────────
   useEffect(() => {
-    if (!supported) return;
-    // Skip in iframe/preview to avoid caching issues
-    const inIframe = (() => { try { return window.self !== window.top; } catch { return true; } })();
-    const isPreview = window.location.hostname.includes("lovableproject.com") ||
-                      window.location.hostname.includes("id-preview--");
-    if (inIframe || isPreview) return;
+    if (!browserSupported) return;
 
-    navigator.serviceWorker.register("/sw.js").catch((e) => console.warn("SW reg failed", e));
-  }, [supported]);
+    // لا تسجّل داخل iframe أو preview environments
+    try {
+      if (window.self !== window.top) return;
+    } catch { return; }
 
-  // Check current sub status
+    const hostname = window.location.hostname;
+    if (
+      hostname.includes("lovableproject.com") ||
+      hostname.includes("id-preview--") ||
+      hostname === "localhost"
+    ) {
+      setVapidStatus("unavailable");
+      return;
+    }
+
+    navigator.serviceWorker
+      .register("/sw.js", { scope: "/" })
+      .catch((e) => console.warn("[Push] SW registration failed:", e));
+  }, [browserSupported]);
+
+  // ── VAPID Pre-check ──────────────────────────────────────────
   useEffect(() => {
-    if (!supported || !user?.id) return;
-    navigator.serviceWorker.ready.then(async (reg) => {
-      const sub = await reg.pushManager.getSubscription();
-      setIsSubscribed(!!sub);
-    }).catch(() => {});
-  }, [supported, user?.id]);
+    if (!browserSupported || !user?.id || checkedRef.current) return;
+    checkedRef.current = true;
 
-  const subscribe = useCallback(async () => {
-    if (!supported || !user?.id) return false;
+    const checkVapid = async () => {
+      try {
+        const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID as string;
+        if (!projectId) {
+          setVapidStatus("unavailable");
+          return;
+        }
+
+        const ctrl = new AbortController();
+        const timeout = setTimeout(() => ctrl.abort(), 5000);
+
+        const res = await fetch(
+          `https://${projectId}.supabase.co/functions/v1/vapid-public-key`,
+          { signal: ctrl.signal }
+        ).finally(() => clearTimeout(timeout));
+
+        if (!res.ok) {
+          // 404 = Edge Function غير مطلوبة حالياً — صمت كامل
+          if (res.status !== 404) {
+            console.warn("[Push] VAPID check returned HTTP", res.status);
+          }
+          setVapidStatus("unavailable");
+          return;
+        }
+
+        const json = await res.json();
+        if (json?.publicKey) {
+          setVapidStatus("available");
+        } else {
+          setVapidStatus("unavailable");
+        }
+      } catch (e: any) {
+        if (e?.name !== "AbortError") {
+          console.warn("[Push] VAPID check failed:", e?.message);
+        }
+        setVapidStatus("unavailable");
+      }
+    };
+
+    checkVapid();
+  }, [browserSupported, user?.id]);
+
+  // ── Check current subscription ───────────────────────────────
+  useEffect(() => {
+    if (!browserSupported || !user?.id || vapidStatus !== "available") return;
+    navigator.serviceWorker.ready
+      .then(async (reg) => {
+        const sub = await reg.pushManager.getSubscription();
+        setIsSubscribed(!!sub);
+      })
+      .catch(() => {});
+  }, [browserSupported, user?.id, vapidStatus]);
+
+  // ── Subscribe ────────────────────────────────────────────────
+  const subscribe = useCallback(async (): Promise<boolean> => {
+    if (!browserSupported || !user?.id || vapidStatus !== "available") {
+      return false;
+    }
+
     try {
       const perm = await Notification.requestPermission();
       setPermission(perm);
@@ -54,12 +137,27 @@ export const usePushNotifications = () => {
 
       const reg = await navigator.serviceWorker.ready;
 
-      // Get VAPID public key
-      const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
-      const res = await fetch(`https://${projectId}.supabase.co/functions/v1/vapid-public-key`);
-      const { publicKey } = await res.json();
-      if (!publicKey) throw new Error("No VAPID key");
+      // جلب الـ VAPID key
+      const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID as string;
+      const ctrl = new AbortController();
+      const timeout = setTimeout(() => ctrl.abort(), 5000);
+      const res = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/vapid-public-key`,
+        { signal: ctrl.signal }
+      ).finally(() => clearTimeout(timeout));
 
+      if (!res.ok) {
+        setVapidStatus("unavailable");
+        return false;
+      }
+
+      const { publicKey } = await res.json();
+      if (!publicKey) {
+        setVapidStatus("unavailable");
+        return false;
+      }
+
+      // Subscribe أو استرجع الـ subscription الموجودة
       let sub = await reg.pushManager.getSubscription();
       if (!sub) {
         sub = await reg.pushManager.subscribe({
@@ -68,22 +166,53 @@ export const usePushNotifications = () => {
         });
       }
 
+      // حفظ في Supabase
       const json: any = sub.toJSON();
-      await supabase.from("push_subscriptions").upsert({
-        user_id: user.id,
-        endpoint: sub.endpoint,
-        p256dh: json.keys?.p256dh,
-        auth: json.keys?.auth,
-        user_agent: navigator.userAgent.slice(0, 200),
-      }, { onConflict: "endpoint" });
+      await supabase.from("push_subscriptions").upsert(
+        {
+          user_id: user.id,
+          endpoint: sub.endpoint,
+          p256dh: json.keys?.p256dh,
+          auth: json.keys?.auth,
+          user_agent: navigator.userAgent.slice(0, 200),
+        },
+        { onConflict: "endpoint" }
+      );
 
       setIsSubscribed(true);
       return true;
-    } catch (e) {
-      console.error("Push subscribe failed", e);
+    } catch (e: any) {
+      console.warn("[Push] Subscribe failed:", e?.message);
       return false;
     }
-  }, [supported, user?.id]);
+  }, [browserSupported, user?.id, vapidStatus]);
 
-  return { supported, permission, isSubscribed, subscribe };
+  // ── Unsubscribe ──────────────────────────────────────────────
+  const unsubscribe = useCallback(async (): Promise<void> => {
+    if (!browserSupported) return;
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.getSubscription();
+      if (sub) {
+        await sub.unsubscribe();
+        await supabase
+          .from("push_subscriptions")
+          .delete()
+          .eq("endpoint", sub.endpoint);
+      }
+      setIsSubscribed(false);
+    } catch (e) {
+      console.warn("[Push] Unsubscribe failed:", e);
+    }
+  }, [browserSupported]);
+
+  return {
+    /** true فقط إذا المتصفح يدعم Push والـ VAPID متاح */
+    supported: browserSupported && vapidStatus === "available",
+    permission,
+    isSubscribed,
+    vapidStatus,
+    subscribe,
+    unsubscribe,
+  };
 };
