@@ -220,7 +220,12 @@ const RequestCard = ({ req, onAccept, onBlock, onProfile, delay }: any) => {
 ───────────────────────────────────────────────────────── */
 const ChatsPage = () => {
   const navigate = useNavigate();
-  const { chats, isLoading, createChat, deleteChat } = useChats();
+ const {
+  chats = [],
+  isLoading,
+  createChat,
+  deleteChat
+} = useChats();
   const { user } = useAuth();
   const { followers, following, pendingRequests, acceptFollow, unfollow } = useFollows();
   const { isBlocked, blockUser } = useBlockedUsers();
