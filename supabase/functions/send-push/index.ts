@@ -1,194 +1,218 @@
-// supabase/functions/send-push/index.ts
+import { useEffect, useRef } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
+import { useSettings } from "@/hooks/useSettings";
+import { playNotificationSound, vibrate } from "@/lib/notificationSounds";
+import { useQueryClient } from "@tanstack/react-query";
 
-/**
- * FINAL FIXED VERSION
- * ─────────────────────
- * - Secure service-role only usage
- * - Better error handling
- * - Clean dead subscriptions (410/404)
- * - High priority push (WhatsApp-like behavior)
- * - Stable payload for chat-only notifications
- */
+const CHAT_SELECT =
+  "id,user1_id,user2_id,last_message_at,last_message_content,last_message_sender_id,deleted_by,cleared_before," +
+  "user1:profiles!chats_user1_id_fkey(id,username,full_name,avatar_url,is_online,last_seen)," +
+  "user2:profiles!chats_user2_id_fkey(id,username,full_name,avatar_url,is_online,last_seen)";
 
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
-import webpush from "https://esm.sh/web-push@3.6.7";
+function isOnSameChat(chatId: string): boolean {
+  const path = window.location.pathname;
+  return (
+    path === `/chat/${chatId}` ||
+    path === `/chats/${chatId}` ||
+    path.startsWith(`/chat/${chatId}/`)
+  );
+}
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-};
+const GlobalMessageListener = () => {
+  const { user } = useAuth();
+  const { settings } = useSettings();
+  const qc = useQueryClient();
 
-Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
+  const settingsRef = useRef(settings);
+  const qcRef = useRef(qc);
 
-  try {
-    // ─────────────────────────────────────
-    // 1. ENV CHECK
-    // ─────────────────────────────────────
-    const VAPID_PUBLIC = Deno.env.get("VAPID_PUBLIC_KEY");
-    const VAPID_PRIVATE = Deno.env.get("VAPID_PRIVATE_KEY");
-    const VAPID_SUBJECT =
-      Deno.env.get("VAPID_SUBJECT") || "mailto:admin@app.local";
+  useEffect(() => {
+    settingsRef.current = settings;
+  }, [settings]);
 
-    const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
-    const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+  useEffect(() => {
+    qcRef.current = qc;
+  }, [qc]);
 
-    if (!VAPID_PUBLIC || !VAPID_PRIVATE) {
-      return new Response(
-        JSON.stringify({ error: "Missing VAPID keys" }),
+  // ═════════════════════════════════════
+  // 1. CHAT MESSAGES
+  // ═════════════════════════════════════
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const channel = supabase
+      .channel(`chat-msgs-${user.id}`)
+      .on(
+        "postgres_changes",
         {
-          status: 500,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
-      );
-    }
+          event: "INSERT",
+          schema: "public",
+          table: "chat_messages",
+        },
+        async (payload: any) => {
+          const msg = payload.new;
+          if (!msg || msg.sender_id === user.id) return;
 
-    webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC, VAPID_PRIVATE);
+          const onChat = isOnSameChat(msg.chat_id);
+          const s: any = settingsRef.current;
 
-    // ─────────────────────────────────────
-    // 2. REQUEST BODY
-    // ─────────────────────────────────────
-    const body = await req.json();
-    const {
-      user_id,
-      title,
-      body: msgBody,
-      chatId,
-      msgId,
-      url,
-    } = body;
-
-    if (!user_id) {
-      return new Response(
-        JSON.stringify({ error: "user_id required" }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
-      );
-    }
-
-    // ─────────────────────────────────────
-    // 3. SUPABASE CLIENT (SERVICE ROLE ONLY)
-    // ─────────────────────────────────────
-    const supabase = createClient(SUPABASE_URL, SERVICE_ROLE);
-
-    const { data: subs, error } = await supabase
-      .from("push_subscriptions")
-      .select("id, endpoint, p256dh, auth")
-      .eq("user_id", user_id);
-
-    if (error) {
-      console.error("DB error:", error);
-      throw error;
-    }
-
-    if (!subs || subs.length === 0) {
-      return new Response(
-        JSON.stringify({ sent: 0, reason: "no_subscriptions" }),
-        {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
-      );
-    }
-
-    // ─────────────────────────────────────
-    // 4. CHAT-ONLY PAYLOAD (IMPORTANT FIX)
-    // ─────────────────────────────────────
-    const payload = JSON.stringify({
-      type: "chat_message", // 👈 مهم جدًا: فصل الشات عن باقي الإشعارات
-      title: title || "رسالة جديدة 💬",
-      body: msgBody || "رسالة جديدة",
-      chatId,
-      msgId,
-      url: url || `/chat/${chatId}`,
-      icon: "/logo-icon.png",
-      badge: "/logo-icon.png",
-      tag: `chat-${chatId}`,
-      timestamp: Date.now(),
-    });
-
-    // ─────────────────────────────────────
-    // 5. SEND PUSH
-    // ─────────────────────────────────────
-    const results = await Promise.allSettled(
-      subs.map((s) =>
-        webpush.sendNotification(
-          {
-            endpoint: s.endpoint,
-            keys: {
-              p256dh: s.p256dh,
-              auth: s.auth,
-            },
-          },
-          payload,
-          {
-            TTL: 60 * 60 * 24, // 24h
-            urgency: "high",
+          // 🔊 notifications only if NOT in same chat
+          if (!onChat) {
+            if (s?.in_app_sound_enabled !== false) {
+              playNotificationSound(
+                s?.notification_sound || "default",
+                s?.notification_volume ?? 80
+              );
+            }
+            if (s?.vibration_enabled !== false) {
+              vibrate([60, 40, 60]);
+            }
           }
-        )
+
+          // Update chat list optimistically
+          qcRef.current.setQueryData(["chats", user.id], (old: any[] = []) => {
+            const updated = old.map((c) =>
+              c.id === msg.chat_id
+                ? {
+                    ...c,
+                    last_message_at: msg.created_at,
+                    last_message_content: msg.content,
+                    last_message_sender_id: msg.sender_id,
+                  }
+                : c
+            );
+
+            return updated.sort(
+              (a, b) =>
+                new Date(b.last_message_at || 0).getTime() -
+                new Date(a.last_message_at || 0).getTime()
+            );
+          });
+
+          // mark read if user is inside same chat
+          if (onChat) {
+            supabase.rpc("mark_chat_read", {
+              p_chat_id: msg.chat_id,
+              p_user_id: user.id,
+            }).catch(() => {});
+          } else {
+            qcRef.current.invalidateQueries({
+              queryKey: ["unread-counts", user.id],
+            });
+          }
+        }
       )
-    );
+      .subscribe();
 
-    // ─────────────────────────────────────
-    // 6. CLEAN DEAD SUBSCRIPTIONS
-    // ─────────────────────────────────────
-    const deadIds: string[] = [];
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user?.id]);
 
-    results.forEach((r, i) => {
-      if (r.status === "rejected") {
-        const statusCode = (r.reason as any)?.statusCode;
+  // ═════════════════════════════════════
+  // 2. NOTIFICATIONS INSERT
+  // ═════════════════════════════════════
+  useEffect(() => {
+    if (!user?.id) return;
 
-        if (statusCode === 410 || statusCode === 404) {
-          deadIds.push(subs[i].id);
-        } else {
-          console.warn(
-            "Push failed:",
-            subs[i].id,
-            r.reason?.message || r.reason
+    const channel = supabase
+      .channel(`notif-ins-${user.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "notifications",
+          filter: `user_id=eq.${user.id}`,
+        },
+        (payload) => {
+          qcRef.current.setQueryData(
+            ["notifications", user.id],
+            (old: any[] = []) => {
+              if (old.some((n) => n.id === payload.new.id)) return old;
+              return [payload.new, ...old];
+            }
+          );
+
+          const s: any = settingsRef.current;
+
+          if (s?.in_app_sound_enabled !== false) {
+            playNotificationSound(
+              s?.notification_sound || "default",
+              s?.notification_volume ?? 80
+            );
+          }
+
+          if (s?.vibration_enabled !== false) {
+            vibrate([60, 40, 60]);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => supabase.removeChannel(channel);
+  }, [user?.id]);
+
+  // ═════════════════════════════════════
+  // 3. NOTIFICATIONS UPDATE (READ STATUS)
+  // ═════════════════════════════════════
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const channel = supabase
+      .channel(`notif-upd-${user.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "notifications",
+          filter: `user_id=eq.${user.id}`,
+        },
+        (payload) => {
+          qcRef.current.setQueryData(
+            ["notifications", user.id],
+            (old: any[] = []) =>
+              old.map((n) =>
+                n.id === payload.new.id ? { ...n, ...payload.new } : n
+              )
           );
         }
-      }
-    });
+      )
+      .subscribe();
 
-    if (deadIds.length > 0) {
-      await supabase
-        .from("push_subscriptions")
-        .delete()
-        .in("id", deadIds);
-    }
+    return () => supabase.removeChannel(channel);
+  }, [user?.id]);
 
-    // ─────────────────────────────────────
-    // 7. RESPONSE
-    // ─────────────────────────────────────
-    const sent = results.filter((r) => r.status === "fulfilled").length;
+  // ═════════════════════════════════════
+  // 4. READ RECEIPTS SYNC (MULTI DEVICE)
+  // ═════════════════════════════════════
+  useEffect(() => {
+    if (!user?.id) return;
 
-    return new Response(
-      JSON.stringify({
-        success: true,
-        sent,
-        total: subs.length,
-        removed: deadIds.length,
-      }),
-      {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      }
-    );
+    const channel = supabase
+      .channel(`receipts-${user.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "chat_read_receipts",
+          filter: `user_id=eq.${user.id}`,
+        },
+        () => {
+          qcRef.current.invalidateQueries({
+            queryKey: ["unread-counts", user.id],
+          });
+        }
+      )
+      .subscribe();
 
-  } catch (err: any) {
-    console.error("send-push crash:", err);
+    return () => supabase.removeChannel(channel);
+  }, [user?.id]);
 
-    return new Response(
-      JSON.stringify({
-        error: err?.message || "internal_error",
-      }),
-      {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      }
-    );
-  }
-});
+  return null;
+};
+
+export default GlobalMessageListener;
