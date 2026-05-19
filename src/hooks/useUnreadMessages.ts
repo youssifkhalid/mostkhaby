@@ -1,21 +1,17 @@
 // src/hooks/useUnreadMessages.ts
 /**
  * ═══════════════════════════════════════════════════════════════
- * useUnreadMessages — نظام الـ badge الاحترافي
+ * useUnreadMessages — نظام unread مبني على قاعدة البيانات بالكامل
  * ═══════════════════════════════════════════════════════════════
  *
- * المشكلة القديمة:
- * ────────────────
- * • clearChatUnread: ينتظر DB response قبل تحديث الـ cache
- *   → البادج يبقى ثانية أو أكثر بعد فتح الشات
- * • GlobalMessageListener يضيف رسائل للـ unread حتى لو المستخدم
- *   داخل نفس الشات → race condition
+ * Architecture:
+ * ─────────────
+ * • يستخدم جدول chat_read_receipts (last_read_at per user per chat)
+ * • يستدعي DB function: get_unread_counts(user_id)
+ * • clearChatUnread: يستدعي mark_chat_read() — optimistic + DB
+ * • دقيق عبر أي جهاز / refresh / login-logout
  *
- * الحل:
- * ─────
- * 1. clearChatUnread: optimistic update فوري → DB في الخلفية
- * 2. Realtime channel منفصل للـ UPDATE (في GlobalMessageListener)
- * 3. قراءة الـ unread مع batch query واحدة فقط
+ * NO more scanning chat_messages for status — the DB function handles it.
  */
 
 import { useEffect, useMemo, useCallback, useRef } from "react";
@@ -23,51 +19,35 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 
-export type UnreadRow = {
-  id: string;
+export type UnreadCountRow = {
   chat_id: string;
-  sender_id: string;
-  status: string | null;
-  is_deleted: boolean | null;
+  unread_count: number;
 };
 
 export const useUnreadMessages = () => {
   const { user } = useAuth();
   const qc = useQueryClient();
-
-  // ✅ qc في ref — لا تدخل في deps
   const qcRef = useRef(qc);
   useEffect(() => { qcRef.current = qc; }, [qc]);
 
-  // ── Initial fetch ──────────────────────────────────────────────
-  const { data: unread = [] } = useQuery<UnreadRow[]>({
-    queryKey: ["unread-messages", user?.id],
+  // ── Fetch unread counts from DB function ──────────────────
+  const { data: unreadCounts = [] } = useQuery<UnreadCountRow[]>({
+    queryKey: ["unread-counts", user?.id],
     queryFn: async () => {
       if (!user?.id) return [];
 
-      // batch: نجيب chat IDs مع الرسائل في طلب واحد عبر join
-      const { data, error } = await supabase
-        .from("chat_messages")
-        .select("id,chat_id,sender_id,status,is_deleted")
-        .neq("sender_id", user.id)
-        .neq("status", "read")
-        .eq("is_deleted", false)
-        .in(
-          "chat_id",
-          // subquery: محادثات المستخدم فقط
-          (await supabase
-            .from("chats")
-            .select("id")
-            .or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`)
-            .then(({ data: c }) => (c || []).map((x: any) => x.id))
-          )
-        );
+      const { data, error } = await supabase.rpc("get_unread_counts", {
+        p_user_id: user.id,
+      });
 
       if (error) {
         console.warn("[useUnreadMessages] fetch error:", error.message);
         return [];
       }
-      return (data || []) as UnreadRow[];
+      return (data || []).map((r: any) => ({
+        chat_id: r.chat_id,
+        unread_count: Number(r.unread_count),
+      }));
     },
     enabled: !!user?.id,
     staleTime: 0,
@@ -77,71 +57,72 @@ export const useUnreadMessages = () => {
     retry: 1,
   });
 
-  // ── Memos ──────────────────────────────────────────────────────
+  // ── Memos ──────────────────────────────────────────────────
   const unreadPerChat = useMemo(() => {
     const map = new Map<string, number>();
-    for (const m of unread) {
-      if (m.is_deleted) continue;
-      map.set(m.chat_id, (map.get(m.chat_id) || 0) + 1);
+    for (const row of unreadCounts) {
+      if (row.unread_count > 0) map.set(row.chat_id, row.unread_count);
     }
     return map;
-  }, [unread]);
+  }, [unreadCounts]);
 
   const totalUnread = useMemo(
-    () => unread.filter((m) => !m.is_deleted).length,
-    [unread]
+    () => unreadCounts.reduce((sum, r) => sum + r.unread_count, 0),
+    [unreadCounts]
   );
 
-  // ── clearChatUnread ────────────────────────────────────────────
+  // ── clearChatUnread — optimistic + DB ─────────────────────
   /**
-   * ✅ PRODUCTION FIX:
-   * 1. Optimistic: badge يختفي فوراً بدون انتظار DB
-   * 2. DB update في الخلفية (fire & forget)
-   * 3. is_read = true + status = "read" معًا
+   * 1. Optimistic: badge disappears instantly
+   * 2. DB: upsert chat_read_receipts via mark_chat_read()
+   * 3. Rollback on error
    */
   const clearChatUnread = useCallback(
     async (chatId: string) => {
       if (!user?.id || !chatId) return;
 
-      // ── STEP 1: Optimistic clear فوري ──
+      // ── STEP 1: Optimistic clear ──
       qcRef.current.setQueryData(
-        ["unread-messages", user.id],
-        (old: UnreadRow[] = []) => old.filter((m) => m.chat_id !== chatId)
+        ["unread-counts", user.id],
+        (old: UnreadCountRow[] = []) =>
+          old.filter((r) => r.chat_id !== chatId)
       );
 
-      // ── STEP 2: Update local messages cache أيضًا ──
-      qcRef.current.setQueryData(
-        ["chat-messages", chatId, user.id],
-        (old: any[]) =>
-          old?.map((m: any) =>
-            m.sender_id !== user.id && m.status !== "read"
-              ? { ...m, status: "read", is_read: true }
-              : m
-          )
-      );
+      // ── STEP 2: DB upsert (SECURITY DEFINER function, no RLS issues) ──
+      const { error } = await supabase.rpc("mark_chat_read", {
+        p_chat_id: chatId,
+        p_user_id: user.id,
+      });
 
-      // ── STEP 3: DB update في الخلفية ──
-      supabase
-        .from("chat_messages")
-        .update({ status: "read", is_read: true })
-        .eq("chat_id", chatId)
-        .neq("sender_id", user.id)
-        .neq("status", "read")
-        .eq("is_deleted", false)
-        .then(({ error }) => {
-          if (error) {
-            console.warn("[clearChatUnread] DB update failed:", error.message);
-            // rollback: أعد جلب البيانات الحقيقية
-            qcRef.current.invalidateQueries({
-              queryKey: ["unread-messages", user.id],
-            });
-          }
+      if (error) {
+        console.warn("[clearChatUnread] DB failed:", error.message);
+        // Rollback by refetching
+        qcRef.current.invalidateQueries({
+          queryKey: ["unread-counts", user.id],
         });
+      }
     },
     [user?.id]
   );
 
-  return { unread, totalUnread, unreadPerChat, clearChatUnread };
+  // ── Realtime: update unread counts on new messages ────────
+  // This is handled in GlobalMessageListener via invalidateQueries.
+  // We expose an invalidate helper for it to call.
+  const invalidateUnread = useCallback(() => {
+    if (!user?.id) return;
+    qcRef.current.invalidateQueries({
+      queryKey: ["unread-counts", user.id],
+    });
+  }, [user?.id]);
+
+  return {
+    totalUnread,
+    unreadPerChat,
+    clearChatUnread,
+    invalidateUnread,
+    // Legacy compat: unread array (empty — logic is now in unreadPerChat)
+    unread: [],
+  };
 };
 
 export default useUnreadMessages;

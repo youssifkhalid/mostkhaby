@@ -1,16 +1,17 @@
-// src/hooks/useChats.ts
+// src/hooks/useChats.ts — PATCHED (markChatMessagesRead now calls mark_chat_read RPC)
+// Only the changed sections are shown below. Replace the existing file fully.
+
 /**
  * ═══════════════════════════════════════════════════════════════
  * useChats + useChatMessages + useTypingIndicator
  * ═══════════════════════════════════════════════════════════════
  *
- * الإصلاحات:
- * ──────────
- * 1. كل useEffect بـ deps = [chatId] أو [user?.id] فقط
- * 2. qc في ref — لا تدخل في deps (تمنع duplicate subscriptions)
- * 3. .on(...).subscribe() — لا إضافة بعد subscribe
- * 4. cleanup كامل عند unmount
- * 5. optimistic updates صحيحة مع temp-id rollback
+ * FIXES vs original:
+ * ──────────────────
+ * 1. CHAT_SELECT now includes last_message_sender_id
+ * 2. markChatMessagesRead: uses mark_chat_read() RPC (DB-driven unread)
+ *    instead of UPDATE on chat_messages — avoids RLS 403 on bulk updates
+ * 3. Everything else unchanged (channel setup, optimistic updates, etc.)
  */
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -19,7 +20,7 @@ import { useAuth } from "./useAuth";
 import { useEffect, useState, useRef, useCallback } from "react";
 
 const CHAT_SELECT =
-  "id,user1_id,user2_id,last_message_at,last_message_content,deleted_by,cleared_before," +
+  "id,user1_id,user2_id,last_message_at,last_message_content,last_message_sender_id,deleted_by,cleared_before," +
   "user1:profiles!chats_user1_id_fkey(id,username,full_name,avatar_url,is_online,last_seen)," +
   "user2:profiles!chats_user2_id_fkey(id,username,full_name,avatar_url,is_online,last_seen)";
 
@@ -130,13 +131,12 @@ export const useChats = () => {
       .subscribe();
 
     return () => { supabase.removeChannel(ch); };
-  }, [user?.id]); // ✅ user?.id فقط
+  }, [user?.id]);
 
   const createChat = useMutation({
     mutationFn: async (otherUserId: string) => {
       if (!user?.id) throw new Error("Not authenticated");
 
-      // تحقق من وجود محادثة سابقة
       const { data: existing } = await supabase
         .from("chats")
         .select("id")
@@ -223,7 +223,6 @@ export const useChatMessages = (chatId: string | undefined) => {
     refetchOnWindowFocus: false,
   });
 
-  // ✅ Realtime للرسائل
   useEffect(() => {
     if (!chatId || !user?.id) return;
 
@@ -238,7 +237,6 @@ export const useChatMessages = (chatId: string | undefined) => {
           filter: `chat_id=eq.${chatId}`,
         },
         async (payload) => {
-          // جلب الرسالة كاملة مع profile المرسل
           const { data: fullMessage } = await supabase
             .from("chat_messages")
             .select(MSG_SELECT)
@@ -252,7 +250,6 @@ export const useChatMessages = (chatId: string | undefined) => {
             (old: any[]) => {
               if (!old) return [incoming];
               if (old.some((m: any) => m.id === incoming.id)) return old;
-              // أزل temp message للمرسل نفسه
               const filtered = old.filter(
                 (m: any) =>
                   !(
@@ -264,7 +261,6 @@ export const useChatMessages = (chatId: string | undefined) => {
             }
           );
 
-          // حدّث last_message في قائمة المحادثات
           qcRef.current.setQueryData(
             ["chats", user.id],
             (old: any[]) => {
@@ -276,6 +272,7 @@ export const useChatMessages = (chatId: string | undefined) => {
                         ...c,
                         last_message_at: incoming.created_at,
                         last_message_content: incoming.content,
+                        last_message_sender_id: incoming.sender_id,
                       }
                     : c
                 )
@@ -309,9 +306,9 @@ export const useChatMessages = (chatId: string | undefined) => {
       .subscribe();
 
     return () => { supabase.removeChannel(ch); };
-  }, [chatId, user?.id]); // ✅ chatId + user?.id فقط
+  }, [chatId, user?.id]);
 
-  // ── Mutations ──────────────────────────────────────────────────
+  // ── Mutations ──────────────────────────────────────────────
   const sendChatMessage = useMutation({
     mutationFn: async ({
       content,
@@ -386,7 +383,6 @@ export const useChatMessages = (chatId: string | undefined) => {
       return { tempId };
     },
     onError: (_err, _vars, ctx) => {
-      // rollback
       qc.setQueryData(
         ["chat-messages", chatId, user?.id],
         (old: any[]) =>
@@ -402,7 +398,7 @@ export const useChatMessages = (chatId: string | undefined) => {
         .from("chat_messages")
         .update({ is_deleted: true, content: "" })
         .in("id", ids)
-        .eq("sender_id", user?.id!); // ✅ security: يحذف رسائله بس
+        .eq("sender_id", user?.id!);
       if (error) throw error;
     },
     onMutate: async (ids) => {
@@ -437,18 +433,28 @@ export const useChatMessages = (chatId: string | undefined) => {
     },
   });
 
+  /**
+   * ✅ FIXED: markChatMessagesRead now uses mark_chat_read() RPC
+   * - Calls the SECURITY DEFINER function → zero RLS 403 errors
+   * - Updates chat_read_receipts → DB-driven unread counts are accurate
+   * - Also invalidates unread-counts query for instant badge update
+   */
   const markChatMessagesRead = useMutation({
     mutationFn: async () => {
       if (!user?.id || !chatId) return;
-      await supabase
-        .from("chat_messages")
-        .update({ status: "read", is_read: true })
-        .eq("chat_id", chatId)
-        .neq("sender_id", user.id)
-        .neq("status", "read")
-        .eq("is_deleted", false);
+      const { error } = await supabase.rpc("mark_chat_read", {
+        p_chat_id: chatId,
+        p_user_id: user.id,
+      });
+      if (error) throw error;
     },
     onMutate: () => {
+      // Optimistic: clear unread count for this chat
+      qc.setQueryData(
+        ["unread-counts", user?.id],
+        (old: any[] = []) => old.filter((r: any) => r.chat_id !== chatId)
+      );
+      // Also update local messages display (ticks)
       qc.setQueryData(
         ["chat-messages", chatId, user?.id],
         (old: any[]) =>
@@ -509,7 +515,7 @@ export const useTypingIndicator = (chatId: string | undefined) => {
 
   const sendTyping = useCallback(() => {
     const now = Date.now();
-    if (now - lastSentRef.current < 1500) return; // throttle
+    if (now - lastSentRef.current < 1500) return;
     lastSentRef.current = now;
     channelRef.current?.send({
       type: "broadcast",
