@@ -51,7 +51,7 @@ const SendMessagePage = () => {
   const { user } = useAuth();
   const { data: receiverProfile, isLoading: profileLoading } = useProfileByUsername(username);
   const { sendMessage } = useMessages();
-  const { follow, getFollowStatus } = useFollows();
+const { follow, following = [] } = useFollows();
   const { recordVisit } = useProfileVisits();
 
   useEffect(() => {
@@ -101,8 +101,9 @@ const SendMessagePage = () => {
       </div>
     );
   }
-
-  const followStatus = receiverProfile ? getFollowStatus(receiverProfile.id) : null;
+const followStatus = receiverProfile
+  ? following.find((f: any) => f.following_id === receiverProfile.id)?.status
+  : null;
   const socialLinks = (receiverProfile.social_links || {}) as Record<string, string>;
   const activeSocials = Object.entries(socialLinks).filter(([, val]) => val && val.trim());
 
