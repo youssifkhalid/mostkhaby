@@ -1,3 +1,5 @@
+// src/components/GlobalMessageListener.tsx
+
 import { useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -12,6 +14,7 @@ const CHAT_SELECT =
 
 function isOnSameChat(chatId: string): boolean {
   const path = window.location.pathname;
+
   return (
     path === `/chat/${chatId}` ||
     path === `/chats/${chatId}` ||
@@ -52,12 +55,16 @@ const GlobalMessageListener = () => {
         },
         async (payload: any) => {
           const msg = payload.new;
-          if (!msg || msg.sender_id === user.id) return;
+
+          if (!msg) return;
+
+          // ignore my own messages
+          if (msg.sender_id === user.id) return;
 
           const onChat = isOnSameChat(msg.chat_id);
           const s: any = settingsRef.current;
 
-          // 🔊 notifications only if NOT in same chat
+          // 🔊 only outside same chat
           if (!onChat) {
             if (s?.in_app_sound_enabled !== false) {
               playNotificationSound(
@@ -65,47 +72,82 @@ const GlobalMessageListener = () => {
                 s?.notification_volume ?? 80
               );
             }
+
             if (s?.vibration_enabled !== false) {
               vibrate([60, 40, 60]);
             }
           }
 
-          // Update chat list optimistically
-          qcRef.current.setQueryData(["chats", user.id], (old: any[] = []) => {
-            const updated = old.map((c) =>
-              c.id === msg.chat_id
-                ? {
+          // update chats list
+          qcRef.current.setQueryData(
+            ["chats", user.id],
+            (old: any[] = []) => {
+              let exists = false;
+
+              const updated = old.map((c) => {
+                if (c.id === msg.chat_id) {
+                  exists = true;
+
+                  return {
                     ...c,
                     last_message_at: msg.created_at,
                     last_message_content: msg.content,
                     last_message_sender_id: msg.sender_id,
-                  }
-                : c
-            );
+                  };
+                }
 
-            return updated.sort(
-              (a, b) =>
-                new Date(b.last_message_at || 0).getTime() -
-                new Date(a.last_message_at || 0).getTime()
-            );
-          });
+                return c;
+              });
 
-         if (onChat) {
-  (async () => {
-    try {
-      await supabase.rpc("mark_chat_read", {
-        p_chat_id: msg.chat_id,
-        p_user_id: user.id,
-      });
-    } catch {}
-  })();
-} else {
-  qcRef.current.invalidateQueries({
-    queryKey: ["unread-counts", user.id],
-  });
-}
+              return updated.sort(
+                (a, b) =>
+                  new Date(b.last_message_at || 0).getTime() -
+                  new Date(a.last_message_at || 0).getTime()
+              );
+            }
+          );
+
+          // unread / read logic
+          if (onChat) {
+            try {
+              await supabase.rpc("mark_chat_read", {
+                p_chat_id: msg.chat_id,
+                p_user_id: user.id,
+              });
+
+              // update blue ticks instantly
+              qcRef.current.setQueryData(
+                ["chat-messages", msg.chat_id, user.id],
+                (old: any[] = []) =>
+                  old.map((m) =>
+                    m.sender_id !== user.id
+                      ? {
+                          ...m,
+                          status: "read",
+                          is_read: true,
+                        }
+                      : m
+                  )
+              );
+            } catch (err) {
+              console.error("mark_chat_read failed", err);
+            }
+          } else {
+            qcRef.current.invalidateQueries({
+              queryKey: ["unread-counts", user.id],
+            });
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user?.id]);
+
   // ═════════════════════════════════════
-  // 2. NOTIFICATIONS INSERT
+  // 2. NEW NOTIFICATIONS
   // ═════════════════════════════════════
   useEffect(() => {
     if (!user?.id) return;
@@ -124,7 +166,10 @@ const GlobalMessageListener = () => {
           qcRef.current.setQueryData(
             ["notifications", user.id],
             (old: any[] = []) => {
-              if (old.some((n) => n.id === payload.new.id)) return old;
+              if (old.some((n) => n.id === payload.new.id)) {
+                return old;
+              }
+
               return [payload.new, ...old];
             }
           );
@@ -145,11 +190,13 @@ const GlobalMessageListener = () => {
       )
       .subscribe();
 
-    return () => supabase.removeChannel(channel);
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [user?.id]);
 
   // ═════════════════════════════════════
-  // 3. NOTIFICATIONS UPDATE (READ STATUS)
+  // 3. NOTIFICATION UPDATE
   // ═════════════════════════════════════
   useEffect(() => {
     if (!user?.id) return;
@@ -169,18 +216,22 @@ const GlobalMessageListener = () => {
             ["notifications", user.id],
             (old: any[] = []) =>
               old.map((n) =>
-                n.id === payload.new.id ? { ...n, ...payload.new } : n
+                n.id === payload.new.id
+                  ? { ...n, ...payload.new }
+                  : n
               )
           );
         }
       )
       .subscribe();
 
-    return () => supabase.removeChannel(channel);
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [user?.id]);
 
   // ═════════════════════════════════════
-  // 4. READ RECEIPTS SYNC (MULTI DEVICE)
+  // 4. READ RECEIPTS
   // ═════════════════════════════════════
   useEffect(() => {
     if (!user?.id) return;
@@ -199,11 +250,17 @@ const GlobalMessageListener = () => {
           qcRef.current.invalidateQueries({
             queryKey: ["unread-counts", user.id],
           });
+
+          qcRef.current.invalidateQueries({
+            queryKey: ["chats", user.id],
+          });
         }
       )
       .subscribe();
 
-    return () => supabase.removeChannel(channel);
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [user?.id]);
 
   return null;
