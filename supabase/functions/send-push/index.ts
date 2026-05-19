@@ -1,11 +1,13 @@
 // supabase/functions/send-push/index.ts
+
 /**
- * FIXED:
- * ──────
- * 1. Added Authorization header validation (service role only)
- * 2. Handles expired/invalid subscriptions (410/404) cleanly
- * 3. Proper error logging without crashing
- * 4. Added Content-Type header to response
+ * FINAL FIXED VERSION
+ * ─────────────────────
+ * - Secure service-role only usage
+ * - Better error handling
+ * - Clean dead subscriptions (410/404)
+ * - High priority push (WhatsApp-like behavior)
+ * - Stable payload for chat-only notifications
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
@@ -23,14 +25,20 @@ Deno.serve(async (req) => {
   }
 
   try {
+    // ─────────────────────────────────────
+    // 1. ENV CHECK
+    // ─────────────────────────────────────
     const VAPID_PUBLIC = Deno.env.get("VAPID_PUBLIC_KEY");
     const VAPID_PRIVATE = Deno.env.get("VAPID_PRIVATE_KEY");
     const VAPID_SUBJECT =
-      Deno.env.get("VAPID_SUBJECT") || "mailto:admin@mostkhbii.app";
+      Deno.env.get("VAPID_SUBJECT") || "mailto:admin@app.local";
+
+    const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+    const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
     if (!VAPID_PUBLIC || !VAPID_PRIVATE) {
       return new Response(
-        JSON.stringify({ error: "VAPID keys not configured" }),
+        JSON.stringify({ error: "Missing VAPID keys" }),
         {
           status: 500,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -40,31 +48,33 @@ Deno.serve(async (req) => {
 
     webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC, VAPID_PRIVATE);
 
+    // ─────────────────────────────────────
+    // 2. REQUEST BODY
+    // ─────────────────────────────────────
     const body = await req.json();
     const {
       user_id,
       title,
       body: msgBody,
-      url,
-      tag,
-      icon,
-      badge,
-      image,
-      msgId,
       chatId,
+      msgId,
+      url,
     } = body;
 
     if (!user_id) {
-      return new Response(JSON.stringify({ error: "user_id required" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({ error: "user_id required" }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
     }
 
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-    );
+    // ─────────────────────────────────────
+    // 3. SUPABASE CLIENT (SERVICE ROLE ONLY)
+    // ─────────────────────────────────────
+    const supabase = createClient(SUPABASE_URL, SERVICE_ROLE);
 
     const { data: subs, error } = await supabase
       .from("push_subscriptions")
@@ -72,81 +82,113 @@ Deno.serve(async (req) => {
       .eq("user_id", user_id);
 
     if (error) {
-      console.error("send-push: fetch subs error:", error.message);
+      console.error("DB error:", error);
       throw error;
     }
 
-    if (!subs?.length) {
-      return new Response(JSON.stringify({ sent: 0, reason: "no_subscriptions" }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    if (!subs || subs.length === 0) {
+      return new Response(
+        JSON.stringify({ sent: 0, reason: "no_subscriptions" }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
     }
 
+    // ─────────────────────────────────────
+    // 4. CHAT-ONLY PAYLOAD (IMPORTANT FIX)
+    // ─────────────────────────────────────
     const payload = JSON.stringify({
-      title: title || "مستخبي 🤫",
+      type: "chat_message", // 👈 مهم جدًا: فصل الشات عن باقي الإشعارات
+      title: title || "رسالة جديدة 💬",
       body: msgBody || "رسالة جديدة",
-      url: url || "/",
-      tag: tag || "msg",
-      icon: icon || "/logo-icon.png",
-      badge: badge || "/logo-icon.png",
-      image,
-      msgId,
       chatId,
+      msgId,
+      url: url || `/chat/${chatId}`,
+      icon: "/logo-icon.png",
+      badge: "/logo-icon.png",
+      tag: `chat-${chatId}`,
+      timestamp: Date.now(),
     });
 
+    // ─────────────────────────────────────
+    // 5. SEND PUSH
+    // ─────────────────────────────────────
     const results = await Promise.allSettled(
-      subs.map((s: any) =>
+      subs.map((s) =>
         webpush.sendNotification(
           {
             endpoint: s.endpoint,
-            keys: { p256dh: s.p256dh, auth: s.auth },
+            keys: {
+              p256dh: s.p256dh,
+              auth: s.auth,
+            },
           },
           payload,
           {
-            TTL: 86400, // 24 hours
+            TTL: 60 * 60 * 24, // 24h
             urgency: "high",
           }
         )
       )
     );
 
-    // Clean up dead subscriptions (410 Gone / 404 Not Found)
+    // ─────────────────────────────────────
+    // 6. CLEAN DEAD SUBSCRIPTIONS
+    // ─────────────────────────────────────
     const deadIds: string[] = [];
+
     results.forEach((r, i) => {
       if (r.status === "rejected") {
-        const code = (r.reason as any)?.statusCode;
-        if (code === 410 || code === 404) {
+        const statusCode = (r.reason as any)?.statusCode;
+
+        if (statusCode === 410 || statusCode === 404) {
           deadIds.push(subs[i].id);
         } else {
           console.warn(
-            `send-push: failed for sub ${subs[i].id}:`,
-            (r.reason as any)?.message || r.reason
+            "Push failed:",
+            subs[i].id,
+            r.reason?.message || r.reason
           );
         }
       }
     });
 
-    if (deadIds.length) {
-      const { error: delErr } = await supabase
+    if (deadIds.length > 0) {
+      await supabase
         .from("push_subscriptions")
         .delete()
         .in("id", deadIds);
-      if (delErr) console.warn("send-push: cleanup error:", delErr.message);
     }
 
+    // ─────────────────────────────────────
+    // 7. RESPONSE
+    // ─────────────────────────────────────
     const sent = results.filter((r) => r.status === "fulfilled").length;
 
     return new Response(
-      JSON.stringify({ sent, total: subs.length, dead: deadIds.length }),
+      JSON.stringify({
+        success: true,
+        sent,
+        total: subs.length,
+        removed: deadIds.length,
+      }),
       {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       }
     );
-  } catch (e: any) {
-    console.error("send-push error:", e?.message || e);
-    return new Response(JSON.stringify({ error: e?.message || "unknown error" }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+
+  } catch (err: any) {
+    console.error("send-push crash:", err);
+
+    return new Response(
+      JSON.stringify({
+        error: err?.message || "internal_error",
+      }),
+      {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      }
+    );
   }
 });
