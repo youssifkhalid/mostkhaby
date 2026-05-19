@@ -90,26 +90,20 @@ const GlobalMessageListener = () => {
             );
           });
 
-          // mark read if user is inside same chat
-          if (onChat) {
-            supabase.rpc("mark_chat_read", {
-              p_chat_id: msg.chat_id,
-              p_user_id: user.id,
-            }).catch(() => {});
-          } else {
-            qcRef.current.invalidateQueries({
-              queryKey: ["unread-counts", user.id],
-            });
-          }
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [user?.id]);
-
+         if (onChat) {
+  (async () => {
+    try {
+      await supabase.rpc("mark_chat_read", {
+        p_chat_id: msg.chat_id,
+        p_user_id: user.id,
+      });
+    } catch {}
+  })();
+} else {
+  qcRef.current.invalidateQueries({
+    queryKey: ["unread-counts", user.id],
+  });
+}
   // ═════════════════════════════════════
   // 2. NOTIFICATIONS INSERT
   // ═════════════════════════════════════
