@@ -1,4 +1,4 @@
-// src/components/GlobalMessageListener.tsx
+// src/components/GlobalMessageListener.tsx — FIXED
 
 import { useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
@@ -110,12 +110,29 @@ const GlobalMessageListener = () => {
           // unread / read logic
           if (onChat) {
             try {
+              // ✅ STEP 1: Mark chat as read in DB (upsert chat_read_receipts)
               await supabase.rpc("mark_chat_read", {
                 p_chat_id: msg.chat_id,
                 p_user_id: user.id,
               });
 
-              // update blue ticks instantly
+              // ✅ STEP 2: Update chat_messages table — mark old messages as read
+              // This is critical for:
+              // - Blue ticks to appear on sender's device
+              // - Realtime to fire UPDATE event
+              // - Other devices to see the read status
+              const { error: updateError } = await supabase
+                .from("chat_messages")
+                .update({ status: "read", is_read: true })
+                .eq("chat_id", msg.chat_id)
+                .neq("sender_id", user.id)  // Don't mark my own messages
+                .eq("status", "delivered");  // Only unread ones
+
+              if (updateError) {
+                console.warn("[read-receipt-db] UPDATE failed:", updateError.message);
+              }
+
+              // ✅ STEP 3: Update React Query data (optimistic — instant UI response)
               qcRef.current.setQueryData(
                 ["chat-messages", msg.chat_id, user.id],
                 (old: any[] = []) =>
@@ -130,9 +147,10 @@ const GlobalMessageListener = () => {
                   )
               );
             } catch (err) {
-              console.error("mark_chat_read failed", err);
+              console.error("[mark_chat_read] RPC failed", err);
             }
           } else {
+            // User NOT on this chat — just invalidate unread counts
             qcRef.current.invalidateQueries({
               queryKey: ["unread-counts", user.id],
             });
@@ -247,6 +265,8 @@ const GlobalMessageListener = () => {
           filter: `user_id=eq.${user.id}`,
         },
         () => {
+          // When receipts change, invalidate both unread counts and chats
+          // This ensures the UI updates when read status changes
           qcRef.current.invalidateQueries({
             queryKey: ["unread-counts", user.id],
           });
