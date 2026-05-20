@@ -114,12 +114,14 @@ export const useFollows = () => {
       for (let attempt = 0; attempt < maxRetries; attempt++) {
         try {
           // Check existing follow relationship
-          const { data: existing } = await supabase
+          const { data: existing, error: checkError } = await supabase
             .from("follows")
             .select("id,status")
             .eq("follower_id", user.id)
             .eq("following_id", followingId)
-            .single();
+            .maybeSingle();
+
+          if (checkError && checkError.code !== "PGRST116") throw checkError;
 
           if (existing) {
             if (
@@ -162,6 +164,10 @@ export const useFollows = () => {
               const delay = Math.pow(2, attempt) * 100; // 100ms, 200ms, 400ms
               await new Promise((resolve) => setTimeout(resolve, delay));
               continue;
+            }
+            // 403 = RLS policy rejection — don't retry
+            if (error.code === "42501" || error.message.includes("policy")) {
+              throw new Error("غير مسموح بالمتابعة حالياً");
             }
             throw error;
           }
