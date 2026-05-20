@@ -26,13 +26,13 @@ const BottomNav = forwardRef<HTMLElement>((_, ref) => {
   if (hiddenPaths.includes(location.pathname)) return null;
   if (location.pathname.startsWith("/chat/")) return null;
   if (location.pathname.startsWith("/send/")) return null;
-  const knownPaths = ["/", "/profile", "/settings", "/notifications", "/chats", "/about"];
+  const knownPaths = ["/", "/profile", "/settings", "/notifications", "/chats", "/about", "/community"];
   if (!knownPaths.includes(location.pathname) && !location.pathname.startsWith("/chat/")) return null;
 
   return (
     <nav
       ref={ref}
-      className="fixed bottom-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-2xl border-t border-border/20 pb-safe"
+      className="fixed bottom-0 left-0 right-0 z-50 glass-card border-t border-border/20 pb-safe"
     >
       <div className="flex items-center justify-around py-2 px-1 max-w-lg mx-auto">
         {tabs.map((tab) => {
@@ -49,7 +49,7 @@ const BottomNav = forwardRef<HTMLElement>((_, ref) => {
           return (
             <motion.button
               key={tab.path}
-              whileTap={{ scale: 0.85 }}
+              whileTap={{ scale: 0.85 }} whileHover={{ scale: 1.05 }}
               onClick={() => {
                 if (navigator.vibrate) navigator.vibrate(8);
                 navigate(tab.path);
