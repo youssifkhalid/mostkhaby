@@ -390,15 +390,14 @@ export const useChatMessages = (chatId: string | undefined) => {
       );
     },
   });
-
   const bulkDeleteMessages = useMutation({
     mutationFn: async (ids: string[]) => {
-      if (!ids.length) return;
+      if (!ids.length || !user?.id) return;
       const { error } = await supabase
         .from("chat_messages")
         .update({ is_deleted: true, content: "" })
         .in("id", ids)
-        .eq("sender_id", user?.id!);
+        .eq("sender_id", user.id);
       if (error) throw error;
     },
     onMutate: async (ids) => {

@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Route, Routes, useLocation } from "react-router-dom";
+import { AnimatePresence, motion } from "framer-motion";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/contexts/ThemeContext";
@@ -65,10 +66,12 @@ function OnlineStatusSync() {
 function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
 
-  if (loading || !user) {
+  if (loading) {
+    return <PageLoader />;
+  }
+  if (!user) {
     return <>{children}</>;
   }
-
   return (
     <>
       {children}
@@ -78,6 +81,45 @@ function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
       <PushAutoSubscribe />
       <BottomNav />
     </>
+  );
+}
+
+const PageTransition = ({ children }: { children: React.ReactNode }) => {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -10 }}
+      transition={{ duration: 0.25, ease: [0.23, 1, 0.32, 1] }}
+      className="w-full"
+    >
+      {children}
+    </motion.div>
+  );
+};
+
+function AnimatedRoutes() {
+  const location = useLocation();
+  return (
+    <AnimatePresence mode="wait">
+      <Routes location={location} key={location.pathname}>
+        <Route path="/auth"           element={<PageTransition><AuthPage /></PageTransition>} />
+        <Route path="/about"          element={<PageTransition><AboutPage /></PageTransition>} />
+        <Route path="/"               element={<AuthGuard><PageTransition><Index /></PageTransition></AuthGuard>} />
+        <Route path="/index"          element={<AuthGuard><PageTransition><Index /></PageTransition></AuthGuard>} />
+        <Route path="/profile"        element={<AuthGuard><PageTransition><ProfilePage /></PageTransition></AuthGuard>} />
+        <Route path="/inbox"          element={<AuthGuard><PageTransition><InboxPage /></PageTransition></AuthGuard>} />
+        <Route path="/settings"       element={<AuthGuard><PageTransition><SettingsPage /></PageTransition></AuthGuard>} />
+        <Route path="/notifications"  element={<AuthGuard><PageTransition><NotificationsPage /></PageTransition></AuthGuard>} />
+        <Route path="/chats"          element={<AuthGuard><PageTransition><ChatsPage /></PageTransition></AuthGuard>} />
+        <Route path="/chat/:chatId"   element={<AuthGuard><PageTransition><ChatPage /></PageTransition></AuthGuard>} />
+        <Route path="/call/:chatId"   element={<AuthGuard><PageTransition><CallPage /></PageTransition></AuthGuard>} />
+        <Route path="/community"      element={<AuthGuard><PageTransition><CommunityPage /></PageTransition></AuthGuard>} />
+        <Route path="/send/:username" element={<PageTransition><SendMessagePage /></PageTransition>} />
+        <Route path="/:username"      element={<PageTransition><SendMessagePage /></PageTransition>} />
+        <Route path="*"               element={<PageTransition><NotFound /></PageTransition>} />
+      </Routes>
+    </AnimatePresence>
   );
 }
 
@@ -93,23 +135,7 @@ const App = () => (
               <div className="relative z-10">
                 <AuthenticatedLayout>
                   <Suspense fallback={<PageLoader />}>
-                    <Routes>
-                      <Route path="/auth"           element={<AuthPage />} />
-                      <Route path="/about"          element={<AboutPage />} />
-                      <Route path="/"               element={<AuthGuard><Index /></AuthGuard>} />
-                      <Route path="/index"          element={<AuthGuard><Index /></AuthGuard>} />
-                      <Route path="/profile"        element={<AuthGuard><ProfilePage /></AuthGuard>} />
-                      <Route path="/inbox"          element={<AuthGuard><ProfilePage /></AuthGuard>} />
-                      <Route path="/settings"       element={<AuthGuard><SettingsPage /></AuthGuard>} />
-                      <Route path="/notifications"  element={<AuthGuard><NotificationsPage /></AuthGuard>} />
-                      <Route path="/chats"          element={<AuthGuard><ChatsPage /></AuthGuard>} />
-                      <Route path="/chat/:chatId"   element={<AuthGuard><ChatPage /></AuthGuard>} />
-                      <Route path="/call/:chatId"   element={<AuthGuard><CallPage /></AuthGuard>} />
-                      <Route path="/community"      element={<AuthGuard><CommunityPage /></AuthGuard>} />
-                      <Route path="/send/:username" element={<SendMessagePage />} />
-                      <Route path="/:username"      element={<SendMessagePage />} />
-                      <Route path="*"               element={<NotFound />} />
-                    </Routes>
+                    <AnimatedRoutes />
                   </Suspense>
                 </AuthenticatedLayout>
               </div>

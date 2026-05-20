@@ -74,6 +74,10 @@ export const SOUND_OPTIONS: { value: SoundName; label: string; emoji: string }[]
 
 export function vibrate(pattern: number | number[] = [80, 40, 80]) {
   if (typeof navigator !== "undefined" && navigator.vibrate) {
-    try { navigator.vibrate(pattern); } catch {}
+    try {
+      navigator.vibrate(pattern);
+    } catch (e) {
+      console.debug("Vibration failed or blocked:", e);
+    }
   }
 }

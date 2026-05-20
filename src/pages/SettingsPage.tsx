@@ -160,22 +160,32 @@ const SettingsPage = () => {
       <TopBar />
       <div className="max-w-lg mx-auto px-4 py-4 space-y-4">
         {/* Tabs */}
-        <div className="flex gap-1.5 overflow-x-auto pb-2 scrollbar-hide">
-          {tabs.map((tab) => (
-            <motion.button
-              key={tab.id}
-              whileTap={{ scale: 0.95 }}
-              onClick={() => setActiveTab(tab.id)}
-              className={`px-3 py-2 rounded-xl text-xs font-cairo font-semibold whitespace-nowrap transition-all flex items-center gap-1.5 ${
-                activeTab === tab.id
-                  ? "bg-primary text-primary-foreground shadow-[0_0_15px_hsl(var(--primary)/0.3)]"
-                  : "bg-secondary/40 text-muted-foreground hover:bg-secondary/60"
-              }`}
-            >
-              <tab.icon size={13} />
-              {tab.label}
-            </motion.button>
-          ))}
+        <div className="flex gap-1.5 overflow-x-auto pb-2 scrollbar-hide relative">
+          {tabs.map((tab) => {
+            const isActive = activeTab === tab.id;
+            return (
+              <motion.button
+                key={tab.id}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => setActiveTab(tab.id)}
+                className={`px-3.5 py-2.5 rounded-xl text-xs font-cairo font-semibold whitespace-nowrap transition-all flex items-center gap-1.5 relative z-10 ${
+                  isActive
+                    ? "text-primary-foreground font-bold"
+                    : "bg-secondary/40 text-muted-foreground hover:bg-secondary/60"
+                }`}
+              >
+                {isActive && (
+                  <motion.div
+                    layoutId="activeSettingsTab"
+                    className="absolute inset-0 bg-primary rounded-xl -z-10 shadow-[0_4px_15px_hsl(var(--primary)/0.35)]"
+                    transition={{ type: "spring", stiffness: 380, damping: 30 }}
+                  />
+                )}
+                <tab.icon size={13} className="relative z-10" />
+                <span className="relative z-10">{tab.label}</span>
+              </motion.button>
+            );
+          })}
         </div>
 
         <AnimatePresence mode="wait">

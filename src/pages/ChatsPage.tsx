@@ -15,6 +15,7 @@ import { formatDistanceToNow } from "date-fns";
 import { ar } from "date-fns/locale";
 import { toast } from "sonner";
 import TopBar from "@/components/TopBar";
+import EmptyState from "@/components/EmptyState";
 import { useState, useMemo, useCallback } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -296,7 +297,7 @@ const ChatsPage = () => {
   }, []);
 
   const filteredChats = useMemo(() => {
-    let list = chats.filter((chat: any) => {
+    const list = chats.filter((chat: any) => {
       const otherId = getOtherUserId(chat);
       if (isBlocked(otherId)) return false;
       if (searchQuery) {
@@ -321,7 +322,7 @@ const ChatsPage = () => {
   );
 
   const tabs = [
-    { id: "chats" as const, label: "المحادثات", icon: MessageCircle, count: filteredChats?.length || 0 },
+    { id: "chats" as const, label: "المحادثات", icon: MessageCircle, count: filteredChats.length },
     { id: "friends" as const, label: "الأصدقاء", icon: Users, count: acceptedFollowersList.length },
     { id: "requests" as const, label: "الطلبات", icon: UserPlus, count: pendingRequests.length },
   ];
@@ -332,41 +333,59 @@ const ChatsPage = () => {
       <div className="max-w-lg mx-auto px-4 py-4 space-y-4">
 
         {/* Tabs */}
-        <div className="flex gap-1.5 p-1 bg-secondary/30 rounded-2xl">
-          {tabs.map((tab) => (
-            <motion.button
-              key={tab.id} layout whileTap={{ scale: 0.95 }}
-              onClick={() => setActiveTab(tab.id)}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-cairo font-bold transition-all relative ${
-                activeTab === tab.id
-                  ? "gradient-primary text-primary-foreground shadow-[0_4px_20px_hsl(var(--primary)/0.35)]"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              <tab.icon size={13} />
-              <span>{tab.label}</span>
-              {tab.count > 0 && (
-                <motion.span initial={{ scale: 0 }} animate={{ scale: 1 }}
-                  className={`min-w-[18px] h-[18px] px-1 rounded-full text-[9px] font-extrabold flex items-center justify-center ${
-                    activeTab === tab.id ? "bg-white/25 text-white" : "bg-primary text-primary-foreground"
-                  }`}>
-                  {tab.count}
-                </motion.span>
-              )}
-              {/* Unread dot on chats tab when not active */}
-              {tab.id === "chats" && totalUnread > 0 && activeTab !== "chats" && (
-                <motion.span
-                  animate={{ scale: [1, 1.4, 1] }} transition={{ repeat: Infinity, duration: 1.5 }}
-                  className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-rose-500 shadow-[0_0_6px_rgba(239,68,68,0.8)]" />
-              )}
-              {/* Pending requests dot */}
-              {tab.id === "requests" && pendingRequests.length > 0 && activeTab !== "requests" && (
-                <motion.span
-                  animate={{ scale: [1, 1.4, 1] }} transition={{ repeat: Infinity, duration: 1.8 }}
-                  className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-rose-500" />
-              )}
-            </motion.button>
-          ))}
+        <div className="flex gap-1.5 p-1 bg-secondary/30 rounded-2xl relative">
+          {tabs.map((tab) => {
+            const isActive = activeTab === tab.id;
+            return (
+              <motion.button
+                key={tab.id}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-cairo font-bold transition-all relative z-10 ${
+                  isActive
+                    ? "text-primary-foreground font-bold"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {isActive && (
+                  <motion.div
+                    layoutId="chats-active-tab"
+                    className="absolute inset-0 gradient-primary rounded-xl shadow-[0_4px_20px_hsl(var(--primary)/0.35)]"
+                    transition={{ type: "spring", stiffness: 380, damping: 30 }}
+                  />
+                )}
+                <tab.icon size={13} className="relative z-10" />
+                <span className="relative z-10">{tab.label}</span>
+                {tab.count > 0 && (
+                  <motion.span
+                    initial={{ scale: 0 }}
+                    animate={{ scale: 1 }}
+                    className={`min-w-[18px] h-[18px] px-1 rounded-full text-[9px] font-extrabold flex items-center justify-center relative z-10 ${
+                      isActive ? "bg-white/25 text-white" : "bg-primary text-primary-foreground"
+                    }`}
+                  >
+                    {tab.count}
+                  </motion.span>
+                )}
+                {/* Unread dot on chats tab when not active */}
+                {tab.id === "chats" && totalUnread > 0 && !isActive && (
+                  <motion.span
+                    animate={{ scale: [1, 1.4, 1] }}
+                    transition={{ repeat: Infinity, duration: 1.5 }}
+                    className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-rose-500 shadow-[0_0_6px_rgba(239,68,68,0.8)] z-10"
+                  />
+                )}
+                {/* Pending requests dot */}
+                {tab.id === "requests" && pendingRequests.length > 0 && !isActive && (
+                  <motion.span
+                    animate={{ scale: [1, 1.4, 1] }}
+                    transition={{ repeat: Infinity, duration: 1.8 }}
+                    className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-rose-500 z-10"
+                  />
+                )}
+              </motion.button>
+            );
+          })}
         </div>
 
      <AnimatePresence mode="wait">
@@ -432,19 +451,11 @@ const ChatsPage = () => {
                   })}
                 </div>
               ) : (
-                <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="text-center py-16 space-y-4">
-                  <div className="relative w-20 h-20 mx-auto">
-                    <div className="w-20 h-20 bg-primary/10 rounded-3xl flex items-center justify-center">
-                      <MessageCircle size={38} className="text-primary" />
-                    </div>
-                    <motion.div animate={{ scale: [1, 1.2, 1], opacity: [0.5, 1, 0.5] }} transition={{ repeat: Infinity, duration: 2 }}
-                      className="absolute -top-1 -right-1 w-6 h-6 bg-primary rounded-full flex items-center justify-center">
-                      <Sparkles size={12} className="text-primary-foreground" />
-                    </motion.div>
-                  </div>
-                  <h3 className="font-cairo font-extrabold text-lg text-foreground">مفيش محادثات لسه</h3>
-                  <p className="text-sm text-muted-foreground font-cairo">تابع حد وهو يتابعك عشان تفتحو شات 💬</p>
-                </motion.div>
+                <EmptyState
+                  icon={MessageCircle}
+                  title="مفيش محادثات لسه"
+                  description="تابع حد وهو يتابعك عشان تفتحو شات 💬"
+                />
               )}
             </motion.div>
           )}
@@ -532,13 +543,11 @@ const ChatsPage = () => {
                   </AnimatePresence>
                 </>
               ) : (
-                <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="text-center py-16 space-y-4">
-                  <div className="w-20 h-20 mx-auto bg-accent/10 rounded-3xl flex items-center justify-center">
-                    <UserPlus size={38} className="text-accent" />
-                  </div>
-                  <h3 className="font-cairo font-extrabold text-lg text-foreground">مفيش طلبات</h3>
-                  <p className="text-sm text-muted-foreground font-cairo">لما حد يبعتلك طلب متابعة هيظهر هنا ✨</p>
-                </motion.div>
+                <EmptyState
+                  icon={UserPlus}
+                  title="مفيش طلبات"
+                  description="لما حد يبعتلك طلب متابعة هيظهر هنا ✨"
+                />
               )}
             </motion.div>
           )}

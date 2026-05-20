@@ -2,6 +2,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useState } from "react";
 import TopBar from "@/components/TopBar";
 import MessageCard from "@/components/MessageCard";
+import EmptyState from "@/components/EmptyState";
 import { Inbox, Star, Send as SendIcon, Loader2, Search, Reply } from "lucide-react";
 import { useMessages } from "@/hooks/useMessages";
 import { toast } from "sonner";
@@ -91,19 +92,30 @@ const InboxPage = () => {
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-1 bg-secondary/30 rounded-xl p-1">
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-cairo font-semibold transition-all ${
-                activeTab === tab.id ? "bg-primary/15 text-primary border border-primary/20" : "text-muted-foreground"
-              }`}
-            >
-              <tab.icon size={14} />
-              {tab.label}
-            </button>
-          ))}
+        <div className="flex gap-1 bg-secondary/30 rounded-xl p-1 relative">
+          {tabs.map((tab) => {
+            const isActive = activeTab === tab.id;
+            return (
+              <motion.button
+                key={tab.id}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-cairo font-bold transition-all relative z-10 ${
+                  isActive ? "text-primary" : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {isActive && (
+                  <motion.div
+                    layoutId="inbox-active-tab"
+                    className="absolute inset-0 bg-primary/15 border border-primary/20 rounded-lg"
+                    transition={{ type: "spring", stiffness: 380, damping: 30 }}
+                  />
+                )}
+                <tab.icon size={14} className="relative z-10" />
+                <span className="relative z-10">{tab.label}</span>
+              </motion.button>
+            );
+          })}
         </div>
 
         {/* Messages */}
@@ -135,13 +147,17 @@ const InboxPage = () => {
                 ))}
               </motion.div>
             ) : (
-              <motion.div key="empty" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="text-center py-16 space-y-4">
-                <div className="text-6xl">{activeTab === "favorites" ? "⭐" : activeTab === "sent" ? "📤" : "📭"}</div>
-                <h3 className="font-cairo font-bold text-xl text-foreground">
-                  {activeTab === "favorites" ? "مفيش مفضلة لسه" : activeTab === "sent" ? "مبعتش رسائل لسه" : "مفيش رسائل لسه"}
-                </h3>
-                <p className="text-sm text-muted-foreground">شارك رابطك عشان الناس تبعتلك!</p>
-              </motion.div>
+              <EmptyState
+                icon={activeTab === "favorites" ? Star : activeTab === "sent" ? SendIcon : Inbox}
+                title={
+                  activeTab === "favorites"
+                    ? "مفيش مفضلة لسه"
+                    : activeTab === "sent"
+                    ? "مبعتش رسائل لسه"
+                    : "مفيش رسائل لسه"
+                }
+                description="شارك رابطك عشان الناس تبعتلك رسايل مجهولة ممتعة! 💬"
+              />
             )}
           </AnimatePresence>
         )}

@@ -283,22 +283,28 @@ export const useFollows = () => {
     },
   });
 
+  // ── Pending follow requests ──────────────────────────────
+  const pendingRequests = React.useMemo(() => {
+    return followers.filter((f: any) => f.status === "pending");
+  }, [followers]);
+
   return {
     // Data
     following,
     followers,
+    pendingRequests,
     isFollowing,
     isLoadingFollowing,
     isLoadingFollowers,
 
     // Mutations
-    follow: followMutation.mutate,
-    isFollowing: followMutation.isPending,
-    unfollow: unfollowMutation.mutate,
+    follow: followMutation,
+    isFollowingMutationPending: followMutation.isPending,
+    unfollow: unfollowMutation,
     isUnfollowing: unfollowMutation.isPending,
-    acceptFollow: acceptFollowMutation.mutate,
+    acceptFollow: acceptFollowMutation,
     isAcceptingFollow: acceptFollowMutation.isPending,
-    rejectFollow: rejectFollowMutation.mutate,
+    rejectFollow: rejectFollowMutation,
     isRejectingFollow: rejectFollowMutation.isPending,
 
     // Status

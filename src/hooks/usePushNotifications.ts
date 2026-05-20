@@ -163,18 +163,14 @@ export const usePushNotifications = () => {
         applicationServerKey: urlBase64ToUint8Array(publicKey),
       });
 
-      // Save to DB
+      // Save to DB via security definer RPC to prevent RLS/duplicate endpoint conflicts
       const { error } = await supabase
-        .from("push_subscriptions")
-        .upsert([
-          {
-            user_id: user.id,
-            endpoint: sub.endpoint,
-            p256dh: btoa(String.fromCharCode.apply(null, Array.from(new Uint8Array((sub.getKey("p256dh") as ArrayBuffer))))),
-            auth: btoa(String.fromCharCode.apply(null, Array.from(new Uint8Array((sub.getKey("auth") as ArrayBuffer))))),
-            user_agent: navigator.userAgent,
-          },
-        ], { onConflict: "endpoint" });
+        .rpc("register_push_subscription", {
+          p_endpoint: sub.endpoint,
+          p_p256dh: btoa(String.fromCharCode.apply(null, Array.from(new Uint8Array((sub.getKey("p256dh") as ArrayBuffer))))),
+          p_auth: btoa(String.fromCharCode.apply(null, Array.from(new Uint8Array((sub.getKey("auth") as ArrayBuffer))))),
+          p_user_agent: navigator.userAgent,
+        });
 
       if (error) {
         console.warn("[Push] Failed to save subscription:", error);

@@ -78,10 +78,10 @@ function dateLabel(displayDate: string, rawDate: string) {
 /* ─── Status Icon ─── */
 const StatusIcon = memo(({ status, isMine }: { status: string; isMine: boolean }) => {
   if (!isMine) return null;
-  if (status === "sending") return <Clock size={11} className="opacity-50" />;
-  if (status === "read") return <CheckCheck size={13} className="text-blue-400" />;
-  if (status === "delivered") return <CheckCheck size={13} className="opacity-60" />;
-  return <Check size={13} className="opacity-60" />;
+  if (status === "sending") return <Clock size={11} className="opacity-50 animate-pulse" />;
+  if (status === "read") return <CheckCheck size={13} className="text-emerald-300 drop-shadow-[0_0_4px_rgba(52,211,153,0.6)]" />;
+  if (status === "delivered") return <CheckCheck size={13} className="text-primary-foreground/75" />;
+  return <Check size={13} className="text-primary-foreground/50" />;
 });
 
 /* ─── Voice Player ─── */
@@ -183,7 +183,7 @@ const SwipeReply = memo(({ children, onReply, isOwn }: {
           const reached = isOwn ? info.offset.x < -threshold : info.offset.x > threshold;
           if (reached && !triggered.current) {
             triggered.current = true;
-            if (navigator.vibrate) navigator.vibrate(12);
+            try { navigator.vibrate(12); } catch (e) { /* ignore vibration errors */ }
           }
         }}
         onDragEnd={(_, info) => {
@@ -215,7 +215,7 @@ const Bubble = memo(({
   const startPress = useCallback(() => {
     setPressing(true);
     pressTimer.current = setTimeout(() => {
-      if (navigator.vibrate) navigator.vibrate(15);
+      try { navigator.vibrate(15); } catch (e) { /* ignore vibration errors */ }
       onLongPress();
       setPressing(false);
     }, 420);
@@ -229,18 +229,18 @@ const Bubble = memo(({
   const time = format(new Date(msg.created_at), "h:mm a", { locale: ar });
   const tail = isMine ? "rounded-br-sm" : "rounded-bl-sm";
   const bubble = isMine
-    ? "bg-gradient-to-br from-primary/30 to-primary/15 border border-primary/30"
-    : "bg-gradient-to-br from-secondary/80 to-secondary/50 border border-border/20";
+    ? "gradient-primary text-primary-foreground shadow-[0_4px_16px_rgba(var(--primary)/0.25)] border border-primary/20"
+    : "glass-card bg-card/60 backdrop-blur-md border border-border/20 text-foreground shadow-[0_4px_16px_rgba(0,0,0,0.06)]";
 
   return (
-    <div className={`flex ${isMine ? "justify-strart" : "justify-end"} ${!prevSameSender ? "mt-3" : "mt-0.5"} px-3
+    <div className={`flex ${isMine ? "justify-start" : "justify-end"} ${!prevSameSender ? "mt-3" : "mt-0.5"} px-3
       ${selected ? "bg-primary/10 -mx-3 px-6 py-0.5 rounded-lg" : ""}`}
       onClick={selectionMode ? onClick : undefined}>
 
       {selectionMode && (
         <div className={`flex items-center ${isMine ? "ml-2" : "mr-2"} flex-shrink-0`}>
           <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors
-            ${selected ? "bg-primary border-primary" : "border-muted-foreground/40"}`}>
+            ${selected ? "bg-primary border-primary animate-pulse" : "border-muted-foreground/40"}`}>
             {selected && <Check size={11} className="text-primary-foreground" />}
           </div>
         </div>
@@ -258,20 +258,20 @@ const Bubble = memo(({
           onContextMenu={(e) => { e.preventDefault(); onLongPress(); }}
           className={`relative max-w-[78vw] md:max-w-[420px] rounded-2xl ${tail} ${bubble}
             ${msg.media_type === "image" ? "p-1" : "px-3.5 py-2.5"}
-            ${msg.status === "sending" ? "opacity-70" : ""}
+            ${msg.status === "sending" ? "opacity-70 animate-pulse" : ""}
             select-none cursor-pointer shadow-sm`}>
 
           {/* Reply preview */}
           {replyMsg && !msg.is_deleted && (
-            <div className="flex items-start gap-1.5 mb-2 bg-background/30 rounded-lg px-2 py-1.5 border-r-2 border-primary/60">
+            <div className={`flex items-start gap-1.5 mb-2 rounded-lg px-2 py-1.5 border-r-2 ${isMine ? "bg-primary-foreground/10 border-primary-foreground/60 text-primary-foreground" : "bg-secondary/40 border-primary text-foreground"}`}>
               {replyMsg.media_type === "image" && replyMsg.media_url && (
                 <img src={replyMsg.media_url} className="w-8 h-8 rounded object-cover flex-shrink-0" alt="" />
               )}
               <div className="min-w-0">
-                <p className="text-[10px] font-bold text-primary mb-0.5">
+                <p className={`text-[10px] font-bold mb-0.5 ${isMine ? "text-primary-foreground" : "text-primary"}`}>
                   {replyMsg.sender_id === msg.sender_id ? "أنت" : replyMsg.sender?.full_name || replyMsg.sender?.username || "مستخدم"}
                 </p>
-                <p className="text-[11px] text-muted-foreground truncate">
+                <p className={`text-[11px] truncate ${isMine ? "text-primary-foreground/80" : "text-muted-foreground"}`}>
                   {replyMsg.is_deleted ? "🚫 تم حذف الرسالة" :
                     replyMsg.media_type === "image" ? "📷 صورة" :
                     replyMsg.media_type === "audio" ? "🎤 رسالة صوتية" :
@@ -290,12 +290,12 @@ const Bubble = memo(({
               <div className="absolute inset-0 bg-black/0 hover:bg-black/10 transition-colors flex items-center justify-center opacity-0 hover:opacity-100">
                 <ZoomIn size={24} className="text-white drop-shadow" />
               </div>
-              {msg.content && <p className="text-sm font-cairo px-2 pt-1.5 pb-1 text-foreground">{msg.content}</p>}
+              {msg.content && <p className={`text-sm font-cairo px-2 pt-1.5 pb-1 ${isMine ? "text-primary-foreground" : "text-foreground"}`}>{msg.content}</p>}
             </button>
           ) : msg.media_type === "audio" && msg.media_url ? (
             <VoicePlayerInline url={msg.media_url} duration={msg.audio_duration} waveform={msg.waveform} isMine={isMine} />
           ) : (
-            <p className="text-[15px] font-cairo leading-relaxed whitespace-pre-wrap break-words text-foreground">
+            <p className={`text-[15px] font-cairo leading-relaxed whitespace-pre-wrap break-words ${isMine ? "text-primary-foreground" : "text-foreground"}`}>
               {msg.content}
             </p>
           )}
@@ -303,9 +303,9 @@ const Bubble = memo(({
           {/* Meta */}
           <div className={`flex items-center gap-1 mt-1 ${isMine ? "justify-start" : "justify-end"}`}>
             {msg.is_edited && !msg.is_deleted && (
-              <span className="text-[9px] text-muted-foreground/60 italic">معدّلة</span>
+              <span className={`text-[9px] italic ${isMine ? "text-primary-foreground/60" : "text-muted-foreground/60"}`}>معدّلة</span>
             )}
-            <span className="text-[10px] text-muted-foreground/60">{time}</span>
+            <span className={`text-[10px] ${isMine ? "text-primary-foreground/75" : "text-muted-foreground/60"}`}>{time}</span>
             <StatusIcon status={msg.status} isMine={isMine} />
           </div>
 
@@ -393,12 +393,12 @@ const MessageActionsSheet = memo(({ msg, isMine, onClose, onReply, onReact, onEd
 
 /* ─── Typing Indicator ─── */
 const TypingDots = memo(() => (
-  <div className="flex justify-end px-3 pb-1">
-    <div className="bg-secondary/60 border border-border/20 rounded-2xl rounded-bl-sm px-3.5 py-2.5 flex gap-1 items-center">
+  <div className="flex justify-end px-3 pb-1.5">
+    <div className="glass-card bg-card/60 backdrop-blur-md border border-border/10 rounded-2xl rounded-bl-sm px-4 py-3 flex gap-1.5 items-center shadow-sm">
       {[0, 1, 2].map((i) => (
-        <motion.div key={i} className="w-2 h-2 rounded-full bg-muted-foreground/50"
-          animate={{ y: [0, -4, 0], opacity: [0.5, 1, 0.5] }}
-          transition={{ duration: 0.8, repeat: Infinity, delay: i * 0.15 }} />
+        <motion.div key={i} className="w-2 h-2 rounded-full bg-primary"
+          animate={{ y: [0, -5, 0] }}
+          transition={{ duration: 0.8, repeat: Infinity, ease: "easeInOut", delay: i * 0.16 }} />
       ))}
     </div>
   </div>
@@ -541,8 +541,8 @@ const ChatPage = () => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: smooth ? "smooth" : "instant" });
   }, []);
 
-  useEffect(() => { scrollToBottom(false); }, []);
-  useEffect(() => { scrollToBottom(); }, [messages.length, isOtherTyping]);
+  useEffect(() => { scrollToBottom(false); }, [scrollToBottom]);
+  useEffect(() => { scrollToBottom(); }, [messages.length, isOtherTyping, scrollToBottom]);
 
   const handleScroll = useCallback(() => {
     if (!scrollRef.current) return;
@@ -613,11 +613,14 @@ const ChatPage = () => {
     }
   }, [recorder, uploadAudio, sendChatMessage]);
 
-  /* Selection */
   const toggleSelect = useCallback((id: string) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
       if (next.size === 0) setSelectionMode(false);
       return next;
     });
@@ -780,13 +783,11 @@ const ChatPage = () => {
           ) : (
             grouped.map((group) => (
               <div key={group.date}>
-                {/* Date divider */}
-                <div className="flex items-center gap-3 px-4 py-3">
-                  <div className="flex-1 h-px bg-border/20" />
-                  <span className="text-[11px] text-muted-foreground/60 font-cairo bg-secondary/30 px-3 py-1 rounded-full">
-                    {dateLabel(group.date)}
+                {/* Sticky Date Separator */}
+                <div className="sticky top-0 z-20 flex items-center justify-center py-2 pointer-events-none">
+                  <span className="text-[11px] font-bold text-muted-foreground bg-background/70 border border-border/10 backdrop-blur-md px-3 py-1 rounded-full pointer-events-auto shadow-sm">
+                    {dateLabel(group.date, group.msgs[0].created_at)}
                   </span>
-                  <div className="flex-1 h-px bg-border/20" />
                 </div>
 
                 {group.msgs.map((msg, idx) => {

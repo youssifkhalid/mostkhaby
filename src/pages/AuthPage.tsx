@@ -106,29 +106,45 @@ const AuthPage = () => {
         </div>
 
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }} className="glass-card p-6 space-y-4">
-          <div className="flex bg-secondary/30 rounded-xl p-1">
+          <div className="flex bg-secondary/30 rounded-xl p-1 relative overflow-hidden">
             <button
               onClick={() => setMode("login")}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-sm font-cairo font-semibold transition-all ${
-                mode === "login" ? "bg-primary text-primary-foreground" : "text-muted-foreground"
+              className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-sm font-cairo font-semibold transition-all relative z-10 ${
+                mode === "login" ? "text-primary-foreground" : "text-muted-foreground"
               }`}
             >
-              <LogIn size={14} /> دخول
+              {mode === "login" && (
+                <motion.div
+                  layoutId="activeAuthTab"
+                  className="absolute inset-0 bg-primary rounded-lg -z-10 shadow-[0_4px_12px_hsl(var(--primary)/0.25)]"
+                  transition={{ type: "spring", stiffness: 380, damping: 30 }}
+                />
+              )}
+              <LogIn size={14} className="relative z-10" /> <span className="relative z-10">دخول</span>
             </button>
             <button
               onClick={() => setMode("signup")}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-sm font-cairo font-semibold transition-all ${
-                mode === "signup" ? "bg-primary text-primary-foreground" : "text-muted-foreground"
+              className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-sm font-cairo font-semibold transition-all relative z-10 ${
+                mode === "signup" ? "text-primary-foreground" : "text-muted-foreground"
               }`}
             >
-              <UserPlus size={14} /> حساب جديد
+              {mode === "signup" && (
+                <motion.div
+                  layoutId="activeAuthTab"
+                  className="absolute inset-0 bg-primary rounded-lg -z-10 shadow-[0_4px_12px_hsl(var(--primary)/0.25)]"
+                  transition={{ type: "spring", stiffness: 380, damping: 30 }}
+                />
+              )}
+              <UserPlus size={14} className="relative z-10" /> <span className="relative z-10">حساب جديد</span>
             </button>
           </div>
 
           <div className="space-y-2">
-            <button
+            <motion.button
+              whileHover={{ scale: 1.02, y: -1 }}
+              whileTap={{ scale: 0.98 }}
               onClick={handleGoogleLogin}
-              className="w-full flex items-center justify-center gap-3 py-3 rounded-xl bg-secondary/50 border border-border/30 font-cairo font-semibold text-sm text-foreground hover:bg-secondary transition-colors"
+              className="w-full flex items-center justify-center gap-3 py-3 rounded-xl bg-card border border-border/40 font-cairo font-semibold text-sm text-foreground hover:bg-secondary/40 transition-colors shadow-sm hover:shadow-md"
             >
               <svg width="18" height="18" viewBox="0 0 24 24">
                 <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1Z"/>
@@ -137,16 +153,18 @@ const AuthPage = () => {
                 <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53Z"/>
               </svg>
               {mode === "login" ? "ادخل" : "سجل"} بحساب جوجل
-            </button>
-            <button
+            </motion.button>
+            <motion.button
+              whileHover={{ scale: 1.02, y: -1 }}
+              whileTap={{ scale: 0.98 }}
               onClick={handleAppleLogin}
-              className="w-full flex items-center justify-center gap-3 py-3 rounded-xl bg-secondary/50 border border-border/30 font-cairo font-semibold text-sm text-foreground hover:bg-secondary transition-colors"
+              className="w-full flex items-center justify-center gap-3 py-3 rounded-xl bg-card border border-border/40 font-cairo font-semibold text-sm text-foreground hover:bg-secondary/40 transition-colors shadow-sm hover:shadow-md"
             >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M17.05 20.28c-.98.95-2.05.88-3.08.4-1.09-.5-2.08-.48-3.24 0-1.44.62-2.2.44-3.06-.4C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/>
               </svg>
               {mode === "login" ? "ادخل" : "سجل"} بحساب Apple
-            </button>
+            </motion.button>
           </div>
 
           <div className="flex items-center gap-3">

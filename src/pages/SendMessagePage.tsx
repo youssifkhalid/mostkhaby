@@ -82,18 +82,12 @@ const { follow, following = [] } = useFollows();
       setTimeout(() => { setSent(false); setMessage(""); }, 2500);
     } catch { toast.error("حصل مشكلة، جرب تاني"); }
   };
-const handleFollow = () => {
-  if (!user || !receiverProfile) {
-    toast.error("سجل دخول الأول");
-    return;
-  }
 
-  follow(receiverProfile.id, {
-    onSuccess: () => {
-      toast.success("تم إرسال طلب المتابعة! 👀");
-    }
-  });
-};
+  const handleFollow = () => {
+    if (!user || !receiverProfile) { toast.error("سجل دخول الأول"); return; }
+    follow.mutate(receiverProfile.id, { onSuccess: () => toast.success("تم إرسال طلب المتابعة! 👀") });
+  };
+
   if (profileLoading) {
     return <div className="min-h-screen flex items-center justify-center"><Loader2 size={28} className="animate-spin text-primary" /></div>;
   }

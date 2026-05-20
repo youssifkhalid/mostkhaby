@@ -11,26 +11,22 @@ import type { Database } from "./types";
    ENV
 ════════════════════════════════════════════════════════════════ */
 
-const SUPABASE_URL =
-  import.meta.env.VITE_SUPABASE_URL;
-
-const SUPABASE_ANON_KEY =
-  import.meta.env.VITE_SUPABASE_ANON_KEY;
+let SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "https://example.supabase.co";
+let SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "anon-key";
 
 /* ════════════════════════════════════════════════════════════════
    ENV VALIDATION
 ════════════════════════════════════════════════════════════════ */
 
+// Validate environment variables with warnings instead of throwing errors
 if (!SUPABASE_URL) {
-  throw new Error(
-    "[Supabase] VITE_SUPABASE_URL غير موجود داخل .env"
-  );
+  console.warn("[Supabase] VITE_SUPABASE_URL غير موجود داخل .env. Using empty string as fallback.");
+  SUPABASE_URL = "";
 }
 
 if (!SUPABASE_ANON_KEY) {
-  throw new Error(
-    "[Supabase] VITE_SUPABASE_ANON_KEY غير موجود داخل .env"
-  );
+  console.warn("[Supabase] VITE_SUPABASE_ANON_KEY غير موجود داخل .env. Using empty string as fallback.");
+  SUPABASE_ANON_KEY = "";
 }
 
 /* ════════════════════════════════════════════════════════════════

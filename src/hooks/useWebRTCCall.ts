@@ -115,7 +115,11 @@ export const useWebRTCCall = ({ chatId, selfId, otherId, type, isCaller, callId,
       })
       .on("broadcast", { event: "ice" }, async (msg: any) => {
         if (msg.payload?.to !== selfId) return;
-        try { await pc.addIceCandidate(new RTCIceCandidate(msg.payload.candidate)); } catch {}
+        try {
+          await pc.addIceCandidate(new RTCIceCandidate(msg.payload.candidate));
+        } catch (e) {
+          console.debug("Failed to add ICE candidate (expected during disconnect/reconnect):", e);
+        }
       })
       .on("broadcast", { event: "hangup" }, (msg: any) => {
         if (msg.payload?.to === selfId) cleanup("ended");
