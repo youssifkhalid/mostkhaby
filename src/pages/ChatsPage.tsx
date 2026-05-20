@@ -321,7 +321,7 @@ const ChatsPage = () => {
   );
 
   const tabs = [
-    { id: "chats" as const, label: "المحادثات", icon: MessageCircle, count: filteredChats.length },
+    { id: "chats" as const, label: "المحادثات", icon: MessageCircle, count: filteredChats?.length || 0 },
     { id: "friends" as const, label: "الأصدقاء", icon: Users, count: acceptedFollowersList.length },
     { id: "requests" as const, label: "الطلبات", icon: UserPlus, count: pendingRequests.length },
   ];
