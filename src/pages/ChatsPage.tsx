@@ -305,7 +305,7 @@ const ChatsPage = () => {
         if (!other?.full_name?.includes(searchQuery) && !other?.username?.includes(searchQuery)) return false;
       }
       if (filter === "online") return getOtherUser(chat)?.is_online;
-      if (filter === "unread") return (unreadPerChat[chat.id] || 0) > 0;
+      if (filter === "unread") return (unreadPerChat.get(chat.id) || 0) > 0;
       return true;
     });
     list.sort((a: any, b: any) => {
@@ -441,7 +441,7 @@ const ChatsPage = () => {
                     return (
                       <SwipeableChatRow
                         key={chat.id} chat={chat} other={other} otherId={otherId}
-                        displayName={displayName} unreadCount={unreadPerChat[chat.id] || 0}
+                        displayName={displayName} unreadCount={unreadPerChat.get(chat.id) || 0}
                         onOpen={handleNavigateToChat}
                         onDelete={(id: string) => { deleteChat.mutate(id); toast.success("تم حذف المحادثة 🗑️"); }}
                         onPin={togglePin} onMute={toggleMute}

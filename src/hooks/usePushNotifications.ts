@@ -74,7 +74,14 @@ export const usePushNotifications = () => {
 
     const checkVapid = async () => {
       try {
-        const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID as string;
+        let projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID as string;
+        if (!projectId) {
+          const url = import.meta.env.VITE_SUPABASE_URL || "";
+          const match = url.match(/https:\/\/([^.]+)\.supabase\.co/);
+          if (match) {
+            projectId = match[1];
+          }
+        }
         if (!projectId) {
           setVapidStatus("unavailable");
           return;
@@ -139,7 +146,14 @@ export const usePushNotifications = () => {
       const reg = await navigator.serviceWorker.ready;
 
       // جلب الـ VAPID key
-      const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID as string;
+      let projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID as string;
+      if (!projectId) {
+        const url = import.meta.env.VITE_SUPABASE_URL || "";
+        const match = url.match(/https:\/\/([^.]+)\.supabase\.co/);
+        if (match) {
+          projectId = match[1];
+        }
+      }
       const ctrl = new AbortController();
       const timeout = setTimeout(() => ctrl.abort(), 5000);
       const res = await fetch(

@@ -21,7 +21,6 @@ const notifIcons: Record<string, { icon: any; color: string; bg: string; label: 
 
 const tabs = [
   { id: "all", label: "الكل" },
-  { id: "message", label: "رسائل" },
   { id: "reply", label: "ردود" },
   { id: "follow", label: "متابعات" },
 ];
