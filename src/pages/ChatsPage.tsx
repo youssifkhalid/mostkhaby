@@ -7,7 +7,7 @@ import {
 import { useNavigate } from "react-router-dom";
 import { useChats } from "@/hooks/useChats";
 import { useAuth } from "@/hooks/useAuth";
-import OnlineIndicator from "@/components/OnlineIndicator";
+import UserAvatar from "@/components/UserAvatar";
 import { useFollows } from "@/hooks/useFollows";
 import { useBlockedUsers } from "@/hooks/useBlockedUsers";
 import { useUnreadMessages } from "@/hooks/useUnreadMessages";
@@ -107,19 +107,13 @@ const SwipeableChatRow = ({
 
           {/* Avatar & Unread Count Badge */}
           <div className="relative flex-shrink-0">
-            {other?.avatar_url ? (
-              <img src={other.avatar_url} alt=""
-                className={`w-[54px] h-[54px] rounded-2xl object-cover ring-2 transition-all duration-300 ${hasUnread ? "ring-rose-500 shadow-[0_0_12px_rgba(239,68,68,0.3)]" : "ring-border/15"}`} />
-            ) : (
-              <div className={`w-[54px] h-[54px] rounded-2xl gradient-primary flex items-center justify-center text-lg font-bold text-primary-foreground ring-2 transition-all duration-300 ${hasUnread ? "ring-rose-500 shadow-[0_0_12px_rgba(239,68,68,0.3)]" : "ring-transparent"}`}>
-                {other?.username?.charAt(0)?.toUpperCase() || "?"}
-              </div>
-            )}
-            
-            {/* Pulsing online status indicator */}
-            <div className="absolute -bottom-0.5 -right-0.5 bg-background rounded-full p-0.5 shadow-sm">
-              <OnlineIndicator isOnline={other?.is_online || false} />
-            </div>
+            <UserAvatar
+              url={other?.avatar_url}
+              name={displayName}
+              size="md"
+              isOnline={other?.is_online || false}
+              className={`ring-2 transition-all duration-300 ${hasUnread ? "ring-rose-500 shadow-[0_0_12px_rgba(239,68,68,0.3)]" : "ring-border/15"}`}
+            />
 
             {/* Glowing Unread Badge */}
             {hasUnread && (
@@ -147,18 +141,13 @@ const FriendCard = ({ person, onChat, onProfile, onBlock, delay }: any) => (
     className="ultra-glass-card p-3.5 flex items-center gap-3.5 group hover:border-primary/30 transition-all duration-300"
   >
     <div className="relative cursor-pointer flex-shrink-0" onClick={() => onProfile(person.username)}>
-      {person.avatar_url ? (
-        <img src={person.avatar_url} alt="" className="w-12 h-12 rounded-xl object-cover ring-2 ring-border/10 group-hover:ring-primary/40 transition-all duration-300" />
-      ) : (
-        <div className="w-12 h-12 rounded-xl gradient-primary flex items-center justify-center font-bold text-primary-foreground">
-          {person.username?.charAt(0)?.toUpperCase()}
-        </div>
-      )}
-      {person.is_online && (
-        <div className="absolute -bottom-0.5 -right-0.5 bg-background rounded-full p-0.5">
-          <OnlineIndicator isOnline />
-        </div>
-      )}
+      <UserAvatar
+        url={person.avatar_url}
+        name={person.full_name || person.username}
+        size="md"
+        isOnline={person.is_online}
+        className="ring-2 ring-border/10 group-hover:ring-primary/40 transition-all duration-300"
+      />
     </div>
     
     <div className="flex-1 text-right min-w-0">
@@ -184,7 +173,7 @@ const FriendCard = ({ person, onChat, onProfile, onBlock, delay }: any) => (
 );
 
 /* ── Request card ── */
-const RequestCard = ({ req, onAccept, onBlock, onProfile, delay }: any) => {
+const RequestCard = ({ req, onAccept, onReject, onProfile, delay }: any) => {
   const [done, setDone] = useState<null | "accepted" | "rejected">(null);
   if (done) return null;
   return (
@@ -198,13 +187,12 @@ const RequestCard = ({ req, onAccept, onBlock, onProfile, delay }: any) => {
       <div className="absolute inset-0 bg-gradient-to-l from-primary/[0.04] to-transparent pointer-events-none" />
       <div className="flex items-center gap-3.5">
         <div className="relative cursor-pointer" onClick={() => onProfile(req.follower?.username)}>
-          {req.follower?.avatar_url ? (
-            <img src={req.follower.avatar_url} alt="" className="w-13 h-13 rounded-2xl object-cover border border-border/10" />
-          ) : (
-            <div className="w-13 h-13 rounded-2xl gradient-primary flex items-center justify-center font-bold text-primary-foreground">
-              {req.follower?.username?.charAt(0)?.toUpperCase()}
-            </div>
-          )}
+          <UserAvatar
+            url={req.follower?.avatar_url}
+            name={req.follower?.full_name || req.follower?.username}
+            size="md"
+            className="w-13 h-13 rounded-2xl border border-border/10"
+          />
           <div className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-primary flex items-center justify-center shadow-lg border border-background">
             <UserPlus size={10} className="text-primary-foreground" />
           </div>
@@ -226,7 +214,7 @@ const RequestCard = ({ req, onAccept, onBlock, onProfile, delay }: any) => {
             <Check size={13} /> قبول
           </motion.button>
           <motion.button whileTap={{ scale: 0.9 }}
-            onClick={() => { setDone("rejected"); onBlock(req.follower?.id); }}
+            onClick={() => { setDone("rejected"); onReject(req.id); }}
             className="flex items-center gap-1.5 bg-destructive/10 text-destructive hover:bg-destructive hover:text-white text-[11px] px-4 py-2.5 rounded-xl font-cairo font-semibold transition-all duration-300">
             <X size={13} /> رفض
           </motion.button>
@@ -248,7 +236,7 @@ const ChatsPage = () => {
   deleteChat
 } = useChats();
   const { user } = useAuth();
-  const { followers, following, pendingRequests, acceptFollow, unfollow } = useFollows();
+  const { followers, following, pendingRequests, acceptFollow, rejectFollow, unfollow } = useFollows();
   const { isBlocked, blockUser } = useBlockedUsers();
   const { totalUnread, unreadPerChat, clearChatUnread } = useUnreadMessages();
   const [activeTab, setActiveTab] = useState<"chats" | "friends" | "requests">("chats");
@@ -531,13 +519,12 @@ const ChatsPage = () => {
                     className="glass-card p-3 flex items-center gap-3 hover:border-primary/20 transition-all group"
                   >
                     <div className="relative cursor-pointer flex-shrink-0" onClick={() => navigate(`/${person.username}`)}>
-                      {person.avatar_url ? (
-                        <img src={person.avatar_url} alt="" className="w-12 h-12 rounded-2xl object-cover ring-2 ring-border/20 group-hover:ring-primary/30 transition-all" />
-                      ) : (
-                        <div className="w-12 h-12 rounded-2xl gradient-primary flex items-center justify-center font-bold text-primary-foreground">
-                          {person.username?.charAt(0)?.toUpperCase()}
-                        </div>
-                      )}
+                      <UserAvatar
+                        url={person.avatar_url}
+                        name={person.full_name || person.username}
+                        size="md"
+                        className="ring-2 ring-border/20 group-hover:ring-primary/30 transition-all"
+                      />
                     </div>
                     <div className="flex-1 text-right min-w-0">
                       <p className="font-cairo font-bold text-sm text-foreground truncate">{person.full_name || person.username}</p>
@@ -578,7 +565,7 @@ const ChatsPage = () => {
                     {pendingRequests.map((req: any, i: number) => (
                       <RequestCard key={req.id} req={req} delay={i * 0.05}
                         onAccept={(id: string) => acceptFollow.mutate(id, { onSuccess: () => toast.success("تم القبول 🎉") })}
-                        onBlock={(id: string) => block.mutate(id)}
+                        onReject={(id: string) => rejectFollow.mutate(id, { onSuccess: () => toast.success("تم رفض الطلب") })}
                         onProfile={(u: string) => navigate(`/${u}`)} />
                     ))}
                   </AnimatePresence>

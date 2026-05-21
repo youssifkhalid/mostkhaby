@@ -19,7 +19,7 @@ import { useBlockedUsers } from "@/hooks/useBlockedUsers";
 import { formatDistanceToNow, format } from "date-fns";
 import { ar } from "date-fns/locale";
 import { toast } from "sonner";
-import OnlineIndicator from "@/components/OnlineIndicator";
+import UserAvatar from "@/components/UserAvatar";
 import { useNicknames } from "@/hooks/useNicknames";
 import NicknameDialog from "@/components/NicknameDialog";
 
@@ -247,19 +247,15 @@ const Bubble = memo(({
       )}
 
       <SwipeReply onReply={onReply} isOwn={isMine}>
-        <motion.div
-          animate={{ scale: pressing ? 0.97 : 1 }}
-          transition={{ type: "spring", stiffness: 600, damping: 30 }}
-          initial={{ opacity: 0, y: 4, scale: 0.97 }}
-          whileInView={{ opacity: 1, y: 0, scale: 1 }}
-          viewport={{ once: true }}
+        <div
+          style={{ transform: pressing ? "scale(0.97)" : "scale(1)", transition: "transform 0.15s ease" }}
           onPointerDown={startPress} onPointerUp={endPress}
           onPointerLeave={endPress} onPointerCancel={endPress}
           onContextMenu={(e) => { e.preventDefault(); onLongPress(); }}
           className={`relative max-w-[78vw] md:max-w-[420px] rounded-2xl ${tail} ${bubble}
             ${msg.media_type === "image" ? "p-1" : "px-3.5 py-2.5"}
             ${msg.status === "sending" ? "opacity-70 animate-pulse" : ""}
-            select-none cursor-pointer shadow-sm`}>
+            select-none cursor-pointer shadow-sm animate-bubble-mount`}>
 
           {/* Reply preview */}
           {replyMsg && !msg.is_deleted && (
@@ -321,7 +317,7 @@ const Bubble = memo(({
               ))}
             </div>
           )}
-        </motion.div>
+        </div>
       </SwipeReply>
     </div>
   );
@@ -544,6 +540,22 @@ const ChatPage = () => {
   useEffect(() => { scrollToBottom(false); }, [scrollToBottom]);
   useEffect(() => { scrollToBottom(); }, [messages.length, isOtherTyping, scrollToBottom]);
 
+  /* Scroll to bottom when mobile keyboard opens (visualViewport shrinks) */
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    let prevHeight = vv.height;
+    const onResize = () => {
+      if (vv.height < prevHeight - 50) {
+        // Keyboard opened — scroll down
+        scrollToBottom(false);
+      }
+      prevHeight = vv.height;
+    };
+    vv.addEventListener("resize", onResize);
+    return () => vv.removeEventListener("resize", onResize);
+  }, [scrollToBottom]);
+
   const handleScroll = useCallback(() => {
     if (!scrollRef.current) return;
     const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
@@ -689,18 +701,7 @@ const ChatPage = () => {
                   {statusText}
                 </motion.p>
               </div>
-              <div className="relative flex-shrink-0">
-                {avatarUrl ? (
-                  <img src={avatarUrl} className="w-10 h-10 rounded-xl object-cover" alt="" />
-                ) : (
-                  <div className="w-10 h-10 rounded-xl gradient-primary flex items-center justify-center text-sm font-bold text-primary-foreground">
-                    {initial}
-                  </div>
-                )}
-                <div className="absolute -bottom-0.5 -right-0.5">
-                  <OnlineIndicator isOnline={!!isOnline} />
-                </div>
-              </div>
+              <UserAvatar url={avatarUrl} name={displayName} size="sm" isOnline={!!isOnline} />
             </button>
           )}
 
@@ -773,10 +774,7 @@ const ChatPage = () => {
             <div className="flex justify-center py-20"><Loader2 size={24} className="animate-spin text-primary" /></div>
           ) : messages.length === 0 ? (
             <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="text-center py-20 px-6">
-              <div className="w-20 h-20 mx-auto gradient-primary rounded-3xl flex items-center justify-center mb-4 shadow-lg">
-                {avatarUrl ? <img src={avatarUrl} className="w-full h-full rounded-3xl object-cover" alt="" /> :
-                  <span className="text-2xl font-bold text-primary-foreground">{initial}</span>}
-              </div>
+              <UserAvatar url={avatarUrl} name={displayName} size="lg" className="mx-auto mb-4 shadow-lg" />
               <p className="font-cairo font-bold text-lg text-foreground">{displayName}</p>
               <p className="text-sm text-muted-foreground mt-1">ابدأ المحادثة 👋</p>
             </motion.div>

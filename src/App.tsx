@@ -101,7 +101,7 @@ const PageTransition = ({ children }: { children: React.ReactNode }) => {
 function AnimatedRoutes() {
   const location = useLocation();
   return (
-    <AnimatePresence mode="wait">
+    <AnimatePresence>
       <Routes location={location} key={location.pathname}>
         <Route path="/auth"           element={<PageTransition><AuthPage /></PageTransition>} />
         <Route path="/about"          element={<PageTransition><AboutPage /></PageTransition>} />

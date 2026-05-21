@@ -186,3 +186,19 @@ html, body, #root {
   box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.08), inset 0 1px 1px rgba(255, 255, 255, 0.8);
 }
 
+/* ─── Chat Bubble Mount Animation ─── */
+@keyframes bubble-mount {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-bubble-mount {
+  animation: bubble-mount 0.18s cubic-bezier(0.21, 1.02, 0.43, 1.01) both;
+}
+

@@ -5,7 +5,7 @@ import { FaInstagram, FaTiktok, FaWhatsapp, FaSnapchat, FaFacebookF, FaXTwitter,
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import MstkhbiLogo from "@/components/MstkhbiLogo";
-import OnlineIndicator from "@/components/OnlineIndicator";
+import UserAvatar from "@/components/UserAvatar";
 import { useProfileByUsername } from "@/hooks/useProfile";
 import { useMessages } from "@/hooks/useMessages";
 import { useAuth } from "@/hooks/useAuth";
@@ -122,22 +122,14 @@ const followStatus = receiverProfile
       <div className="flex-1 max-w-lg mx-auto w-full px-4 py-6 space-y-5">
         {/* Profile Card */}
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="glass-card p-5 text-center space-y-3">
-          <div className="relative inline-block">
-            {receiverProfile.avatar_url ? (
-              <button onClick={() => setShowAvatar(true)} className="relative group">
-                <img src={receiverProfile.avatar_url} alt="" className="w-20 h-20 rounded-2xl object-cover border-2 border-primary/30 shadow-lg" />
-                <div className="absolute inset-0 bg-background/30 rounded-2xl opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                  <Expand size={18} className="text-foreground" />
-                </div>
-              </button>
-            ) : (
-              <div className="w-20 h-20 rounded-2xl bg-primary/20 flex items-center justify-center text-2xl font-bold text-primary shadow-lg">
-                {receiverProfile.full_name?.charAt(0) || receiverProfile.username.charAt(0).toUpperCase()}
-              </div>
-            )}
-            <div className="absolute -bottom-1 -right-1">
-              <OnlineIndicator isOnline={receiverProfile.is_online || false} size="md" />
-            </div>
+          <div className="relative inline-block cursor-pointer" onClick={() => setShowAvatar(true)}>
+            <UserAvatar
+              url={receiverProfile.avatar_url}
+              name={receiverProfile.full_name || receiverProfile.username}
+              size="lg"
+              isOnline={receiverProfile.is_online || false}
+              className="border-2 border-primary/30 shadow-lg"
+            />
           </div>
           <h2 className="font-cairo font-bold text-xl text-foreground">{receiverProfile.full_name || receiverProfile.username}</h2>
           {!receiverProfile.is_online && receiverProfile.last_seen && (

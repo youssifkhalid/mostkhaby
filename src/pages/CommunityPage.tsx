@@ -6,7 +6,7 @@ import { useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
 import type { Tables } from "@/integrations/supabase/types";
-import OnlineIndicator from "@/components/OnlineIndicator";
+import UserAvatar from "@/components/UserAvatar";
 import SuggestedPeople from "@/components/SuggestedPeople";
 
 let debounceTimer: ReturnType<typeof setTimeout>;
@@ -74,18 +74,12 @@ const CommunityPage = () => {
                 onClick={() => navigate(`/${u.username}`)}
                 className="w-full glass-card p-4 flex items-center gap-3 hover:border-primary/20 transition-all"
               >
-                <div className="relative">
-                  {u.avatar_url ? (
-                    <img src={u.avatar_url} alt="" className="w-12 h-12 rounded-xl object-cover" />
-                  ) : (
-                    <div className="w-12 h-12 rounded-xl bg-primary/20 flex items-center justify-center text-lg font-bold text-primary">
-                      {u.full_name?.charAt(0) || u.username.charAt(0).toUpperCase()}
-                    </div>
-                  )}
-                  <div className="absolute -bottom-0.5 -right-0.5">
-                    <OnlineIndicator isOnline={u.is_online || false} />
-                  </div>
-                </div>
+                <UserAvatar
+                  url={u.avatar_url}
+                  name={u.full_name || u.username}
+                  size="md"
+                  isOnline={u.is_online || false}
+                />
                 <div className="flex-1 text-right">
                   <p className="font-cairo font-semibold text-foreground">{u.full_name || u.username}</p>
                   <p className="text-xs text-muted-foreground">@{u.username}</p>

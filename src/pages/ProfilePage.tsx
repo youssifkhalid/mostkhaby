@@ -13,7 +13,7 @@ import { useFollows } from "@/hooks/useFollows";
 import { useReplies } from "@/hooks/useReplies";
 import { supabase } from "@/integrations/supabase/client";
 import QRCodeCard from "@/components/QRCodeCard";
-import OnlineIndicator from "@/components/OnlineIndicator";
+import UserAvatar from "@/components/UserAvatar";
 import { useNavigate } from "react-router-dom";
 import { formatDistanceToNow } from "date-fns";
 import { ar } from "date-fns/locale";
@@ -164,33 +164,19 @@ const ProfilePage = () => {
             <div className="absolute -inset-1 rounded-full border-2 border-dashed border-background/40 z-[5] pointer-events-none" />
             
             <div className="relative z-10">
-              {profile?.avatar_url ? (
-                <motion.img
-                  src={profile.avatar_url}
-                  alt=""
-                  className="w-28 h-28 rounded-full object-cover border-4 border-background shadow-2xl relative z-10"
-                  whileHover={{ scale: 1.04 }}
-                  transition={{ type: "spring", stiffness: 350, damping: 25 }}
-                />
-              ) : (
-                <motion.div
-                  className="w-28 h-28 rounded-full gradient-primary flex items-center justify-center text-4xl font-bold text-primary-foreground shadow-2xl relative z-10 border-4 border-background"
-                  whileHover={{ scale: 1.04 }}
-                  transition={{ type: "spring", stiffness: 350, damping: 25 }}
-                >
-                  {profile?.full_name?.charAt(0) || profile?.username?.charAt(0)?.toUpperCase() || "M"}
-                </motion.div>
-              )}
+              <UserAvatar
+                url={profile?.avatar_url}
+                name={profile?.full_name || profile?.username}
+                size="xl"
+                isOnline={true}
+                className="border-4 border-background shadow-2xl relative z-10"
+              />
               
               {/* Floating Camera Upload Trigger with Glassmorphism */}
               <label className="absolute -bottom-1 -left-1 w-9 h-9 rounded-full bg-accent text-accent-foreground flex items-center justify-center cursor-pointer shadow-xl z-20 border-2 border-background hover:scale-110 active:scale-95 transition-all">
                 <Camera size={14} />
                 <input type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
               </label>
-              
-              <div className="absolute -top-1 -right-1 z-20 bg-background rounded-full p-0.5">
-                <OnlineIndicator isOnline={true} size="md" />
-              </div>
             </div>
           </div>
 
@@ -226,13 +212,11 @@ const ProfilePage = () => {
                     <p className="font-cairo font-semibold text-sm text-foreground">{f.follower?.full_name || f.follower?.username}</p>
                     <p className="text-[11px] text-muted-foreground">@{f.follower?.username}</p>
                   </div>
-                  {f.follower?.avatar_url ? (
-                    <img src={f.follower.avatar_url} alt="" className="w-10 h-10 rounded-xl object-cover" />
-                  ) : (
-                    <div className="w-10 h-10 rounded-xl gradient-primary flex items-center justify-center text-sm font-bold text-primary-foreground">
-                      {f.follower?.username?.charAt(0)?.toUpperCase()}
-                    </div>
-                  )}
+                  <UserAvatar
+                    url={f.follower?.avatar_url}
+                    name={f.follower?.full_name || f.follower?.username}
+                    size="sm"
+                  />
                 </motion.button>
               ))}
               {acceptedFollowers.length === 0 && <p className="text-center text-muted-foreground text-sm font-cairo py-4">مفيش متابعين لسه</p>}
@@ -248,13 +232,11 @@ const ProfilePage = () => {
                     <p className="font-cairo font-semibold text-sm text-foreground">{f.following?.full_name || f.following?.username}</p>
                     <p className="text-[11px] text-muted-foreground">@{f.following?.username}</p>
                   </div>
-                  {f.following?.avatar_url ? (
-                    <img src={f.following.avatar_url} alt="" className="w-10 h-10 rounded-xl object-cover" />
-                  ) : (
-                    <div className="w-10 h-10 rounded-xl gradient-primary flex items-center justify-center text-sm font-bold text-primary-foreground">
-                      {f.following?.username?.charAt(0)?.toUpperCase()}
-                    </div>
-                  )}
+                  <UserAvatar
+                    url={f.following?.avatar_url}
+                    name={f.following?.full_name || f.following?.username}
+                    size="sm"
+                  />
                 </motion.button>
               ))}
               {acceptedFollowing.length === 0 && <p className="text-center text-muted-foreground text-sm font-cairo py-4">مش بتتابع حد</p>}
