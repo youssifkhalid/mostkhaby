@@ -28,8 +28,9 @@ export const useReplies = (messageIds: string[]) => {
   // Realtime for new replies
   useEffect(() => {
     if (!user?.id) return;
+    const instanceId = Math.random().toString(36).substring(7);
     const ch = supabase
-      .channel(`replies-live-${user.id}`)
+      .channel(`replies-live-${user.id}-${instanceId}`)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "message_replies" }, (payload) => {
         // Update all reply queries that might contain this message_id
         qc.setQueriesData({ queryKey: ["message-replies"] }, (old: any) => {

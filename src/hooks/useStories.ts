@@ -10,8 +10,9 @@ export const useStoriesRealtime = () => {
   const { user } = useAuth();
   useEffect(() => {
     if (!user?.id) return;
+    const instanceId = Math.random().toString(36).substring(7);
     const ch = supabase
-      .channel(`stories-rt-${user.id}`)
+      .channel(`stories-rt-${user.id}-${instanceId}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "stories" }, () => {
         qc.invalidateQueries({ queryKey: ["stories-active"] });
         qc.invalidateQueries({ queryKey: ["stories-user"] });

@@ -62,8 +62,9 @@ export const useChats = () => {
   useEffect(() => {
     if (!user?.id) return;
 
+    const instanceId = Math.random().toString(36).substring(7);
     const ch = supabase
-      .channel(`chats-rt-${user.id}`)
+      .channel(`chats-rt-${user.id}-${instanceId}`)
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "chats" },

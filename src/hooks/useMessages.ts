@@ -51,8 +51,9 @@ export const useMessages = () => {
   useEffect(() => {
     if (!user?.id) return;
 
+    const instanceId = Math.random().toString(36).substring(7);
     const channel = supabase
-      .channel(`messages-realtime-${user.id}`)
+      .channel(`messages-realtime-${user.id}-${instanceId}`)
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "messages", filter: `receiver_id=eq.${user.id}` },
@@ -97,7 +98,7 @@ export const useMessages = () => {
       )
       .on(
         "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "messages", filter: `receiver_id=eq.${user.id}` },
+        { event: "UPDATE", schema: "public", table: "messages" },
         (payload) => {
           queryClient.setQueryData(["messages", user.id], (old: any[]) =>
             old?.map((m: any) => (m.id === payload.new.id ? { ...m, ...payload.new } : m)) || []
@@ -106,7 +107,16 @@ export const useMessages = () => {
       )
       .on(
         "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "messages", filter: `sent_by=eq.${user.id}` },
+        { event: "DELETE", schema: "public", table: "messages" },
+        (payload) => {
+          queryClient.setQueryData(["messages", user.id], (old: any[]) =>
+            old?.filter((m: any) => m.id !== payload.old.id) || []
+          );
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "messages", filter: `sender_id=eq.${user.id}` },
         (payload) => {
           queryClient.setQueryData(["sent-messages", user.id], (old: any[]) =>
             old?.map((m: any) => (m.id === payload.new.id ? { ...m, ...payload.new } : m)) || []
@@ -117,7 +127,7 @@ export const useMessages = () => {
 
     // Realtime for message_replies
     const repliesChannel = supabase
-      .channel(`replies-rt-${user.id}`)
+      .channel(`replies-rt-${user.id}-${instanceId}`)
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "message_replies" },

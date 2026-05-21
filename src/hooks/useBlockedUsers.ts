@@ -37,11 +37,12 @@ export const useBlockedUsers = () => {
     retry: false,
   });
 
-  // ✅ channel اسمه unique بـ user.id عشان ما يتعمل conflict
+  // ✅ channel اسمه unique بـ user.id والـ instance لتجنب الكراش عند الاستدعاء المتعدد
   useEffect(() => {
     if (!user?.id) return;
+    const instanceId = Math.random().toString(36).substring(7);
     const ch = supabase
-      .channel(`blocked-rt-${user.id}`)
+      .channel(`blocked-rt-${user.id}-${instanceId}`)
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "blocked_users", filter: `blocker_id=eq.${user.id}` },
