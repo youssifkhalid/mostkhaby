@@ -85,7 +85,11 @@ self.addEventListener("push", (event) => {
     icon: payload.icon || "/logo-icon.png",
     badge: payload.badge || "/logo-icon.png",
     tag: payload.tag || "chat-notification", // Only one per tag
+    renotify: true, // Vibrate again even if same tag replaces old notification
     requireInteraction: false, // Auto-dismiss after a few seconds
+    silent: false, // Allow sound
+    sound: "/sounds/notification.mp3", // Custom notification sound
+    vibrate: [200, 100, 200], // WhatsApp-like vibration pattern
     data: {
       type: payload.type,
       chatId: payload.chatId,
@@ -97,12 +101,10 @@ self.addEventListener("push", (event) => {
       {
         action: "open",
         title: "فتح المحادثة",
-        icon: "/logo-icon.png",
       },
       {
         action: "close",
         title: "إغلاق",
-        icon: "/logo-icon.png",
       },
     ],
     // ✅ Visual properties
