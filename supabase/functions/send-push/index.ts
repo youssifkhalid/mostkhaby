@@ -59,6 +59,7 @@ Deno.serve(async (req) => {
       chatId,
       msgId,
       url,
+      icon_url,
     } = body;
 
     if (!user_id) {
@@ -105,7 +106,7 @@ Deno.serve(async (req) => {
       chatId,
       msgId,
       url: url || `/chat/${chatId}`,
-      icon: "/logo-icon.png",
+      icon: icon_url || "/logo-icon.png",
       badge: "/logo-icon.png",
       tag: `chat-${chatId}`,
       timestamp: Date.now(),
