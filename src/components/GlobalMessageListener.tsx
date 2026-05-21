@@ -123,10 +123,10 @@ const GlobalMessageListener = () => {
               // - Other devices to see the read status
               const { error: updateError } = await supabase
                 .from("chat_messages")
-                .update({ status: "read", is_read: true })
+                .update({ status: "read" })
                 .eq("chat_id", msg.chat_id)
                 .neq("sender_id", user.id)  // Don't mark my own messages
-                .eq("status", "delivered");  // Only unread ones
+                .neq("status", "read");  // Only unread ones
 
               if (updateError) {
                 console.warn("[read-receipt-db] UPDATE failed:", updateError.message);
@@ -141,7 +141,6 @@ const GlobalMessageListener = () => {
                       ? {
                           ...m,
                           status: "read",
-                          is_read: true,
                         }
                       : m
                   )
