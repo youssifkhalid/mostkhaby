@@ -117,10 +117,6 @@ const GlobalMessageListener = () => {
               });
 
               // ✅ STEP 2: Update chat_messages table — mark old messages as read
-              // This is critical for:
-              // - Blue ticks to appear on sender's device
-              // - Realtime to fire UPDATE event
-              // - Other devices to see the read status
               const { error: updateError } = await supabase
                 .from("chat_messages")
                 .update({ status: "read" })
@@ -149,6 +145,21 @@ const GlobalMessageListener = () => {
               console.error("[mark_chat_read] RPC failed", err);
             }
           } else {
+            // ✅ STEP 1.5: Mark incoming message as "delivered" since user is online
+            try {
+              const { error: deliveryError } = await supabase
+                .from("chat_messages")
+                .update({ status: "delivered" })
+                .eq("id", msg.id)
+                .eq("status", "sent"); // Only mark if currently 'sent'
+
+              if (deliveryError) {
+                console.warn("[delivery-receipt] UPDATE failed:", deliveryError.message);
+              }
+            } catch (err) {
+              console.error("[delivery-receipt] failed", err);
+            }
+
             // User NOT on this chat — just invalidate unread counts
             qcRef.current.invalidateQueries({
               queryKey: ["unread-counts", user.id],
@@ -180,6 +191,9 @@ const GlobalMessageListener = () => {
           filter: `user_id=eq.${user.id}`,
         },
         (payload) => {
+          // ignore chat message notifications (handled by chat listener)
+          if (payload.new.type === "message") return;
+
           qcRef.current.setQueryData(
             ["notifications", user.id],
             (old: any[] = []) => {

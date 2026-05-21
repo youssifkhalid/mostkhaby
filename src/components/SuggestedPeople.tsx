@@ -5,7 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useNavigate } from "react-router-dom";
 import { UserPlus } from "lucide-react";
-import OnlineIndicator from "@/components/OnlineIndicator";
+import UserAvatar from "@/components/UserAvatar";
 
 const SuggestedPeople = memo(() => {
   const { user } = useAuth();
@@ -52,18 +52,12 @@ const SuggestedPeople = memo(() => {
             onClick={() => navigate(`/${person.username}`)}
             className="glass-card p-4 min-w-[140px] flex flex-col items-center gap-2 hover:border-primary/20 transition-all flex-shrink-0"
           >
-            <div className="relative">
-              {person.avatar_url ? (
-                <img src={person.avatar_url} alt="" className="w-14 h-14 rounded-xl object-cover" loading="lazy" />
-              ) : (
-                <div className="w-14 h-14 rounded-xl bg-primary/20 flex items-center justify-center text-primary font-bold text-xl">
-                  {person.full_name?.charAt(0) || person.username.charAt(0).toUpperCase()}
-                </div>
-              )}
-              <div className="absolute -bottom-0.5 -right-0.5">
-                <OnlineIndicator isOnline={person.is_online || false} />
-              </div>
-            </div>
+            <UserAvatar
+              url={person.avatar_url}
+              name={person.full_name || person.username}
+              size="md"
+              isOnline={person.is_online || false}
+            />
             <p className="font-cairo font-semibold text-sm text-foreground truncate max-w-[120px]">
               {person.full_name || person.username}
             </p>

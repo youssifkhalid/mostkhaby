@@ -1,10 +1,10 @@
 import { memo } from "react";
 
 const orbs = [
-  { color: "hsl(263, 70%, 58%)", size: 350, x: "5%", y: "8%", delay: 0 },
-  { color: "hsl(187, 85%, 53%)", size: 280, x: "65%", y: "50%", delay: 2 },
-  { color: "hsl(350, 80%, 60%)", size: 220, x: "82%", y: "5%", delay: 4 },
-  { color: "hsl(263, 60%, 45%)", size: 180, x: "20%", y: "75%", delay: 6 },
+  { color: "hsl(263, 70%, 58%)", size: 350, x: "5%", y: "8%" },
+  { color: "hsl(187, 85%, 53%)", size: 280, x: "65%", y: "50%" },
+  { color: "hsl(350, 80%, 60%)", size: 220, x: "82%", y: "5%" },
+  { color: "hsl(263, 60%, 45%)", size: 180, x: "20%", y: "75%" },
 ];
 
 const FloatingBackground = memo(() => (
@@ -19,12 +19,11 @@ const FloatingBackground = memo(() => (
             width: orb.size,
             height: orb.size,
             background: `radial-gradient(circle, ${orb.color} 0%, transparent 70%)`,
-            opacity: 0.04,
+            opacity: 0.045,
             top: orb.y,
             left: orb.x,
-            filter: "blur(90px)",
-            animation: `pulse-glow ${6 + i * 2}s ease-in-out ${orb.delay}s infinite`,
-            willChange: "opacity, transform",
+            filter: "blur(60px)",
+            transform: "translateZ(0)",
           }}
         />
       ))}
@@ -42,3 +41,4 @@ const FloatingBackground = memo(() => (
 FloatingBackground.displayName = "FloatingBackground";
 
 export default FloatingBackground;
+

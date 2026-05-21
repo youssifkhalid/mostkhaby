@@ -7,7 +7,7 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import OnlineIndicator from "@/components/OnlineIndicator";
+import UserAvatar from "@/components/UserAvatar";
 
 interface StoredAccount {
   email: string;
@@ -95,18 +95,12 @@ const AccountSwitcher = () => {
           <p className="font-cairo font-bold text-sm text-foreground truncate">{profile?.full_name || user?.email}</p>
           <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
         </div>
-        <div className="relative flex-shrink-0">
-          {profile?.avatar_url ? (
-            <img src={profile.avatar_url} alt="" className="w-11 h-11 rounded-xl object-cover" />
-          ) : (
-            <div className="w-11 h-11 rounded-xl bg-primary/20 flex items-center justify-center text-primary font-bold text-lg">
-              {profile?.full_name?.charAt(0) || user?.email?.charAt(0)?.toUpperCase() || "M"}
-            </div>
-          )}
-          <div className="absolute -bottom-0.5 -right-0.5">
-            <OnlineIndicator isOnline={true} />
-          </div>
-        </div>
+        <UserAvatar
+          url={profile?.avatar_url}
+          name={profile?.full_name || user?.email}
+          size="sm"
+          isOnline={true}
+        />
       </motion.button>
 
       <AnimatePresence>
@@ -142,18 +136,13 @@ const AccountSwitcher = () => {
                   <p className="font-cairo font-bold text-sm text-foreground truncate">{profile?.full_name || user?.email}</p>
                   <p className="text-[11px] text-muted-foreground truncate">{user?.email}</p>
                 </div>
-                <div className="relative flex-shrink-0">
-                  {profile?.avatar_url ? (
-                    <img src={profile.avatar_url} alt="" className="w-12 h-12 rounded-xl object-cover border-2 border-primary/30" />
-                  ) : (
-                    <div className="w-12 h-12 rounded-xl gradient-primary flex items-center justify-center text-lg font-bold text-primary-foreground">
-                      {profile?.full_name?.charAt(0) || user?.email?.charAt(0)?.toUpperCase() || "M"}
-                    </div>
-                  )}
-                  <div className="absolute -bottom-0.5 -right-0.5">
-                    <OnlineIndicator isOnline={true} size="md" />
-                  </div>
-                </div>
+                <UserAvatar
+                  url={profile?.avatar_url}
+                  name={profile?.full_name || user?.email}
+                  size="md"
+                  isOnline={true}
+                  className="border-2 border-primary/30"
+                />
               </div>
 
               {otherAccounts.length > 0 && (
@@ -172,13 +161,11 @@ const AccountSwitcher = () => {
                         <p className="font-cairo font-semibold text-sm text-foreground truncate">{account.fullName || account.email}</p>
                         <p className="text-[11px] text-muted-foreground truncate">{account.email}</p>
                       </div>
-                      {account.avatarUrl ? (
-                        <img src={account.avatarUrl} alt="" className="w-11 h-11 rounded-xl object-cover flex-shrink-0" />
-                      ) : (
-                        <div className="w-11 h-11 rounded-xl bg-secondary flex items-center justify-center text-muted-foreground font-bold flex-shrink-0">
-                          {account.fullName?.charAt(0) || account.email.charAt(0).toUpperCase()}
-                        </div>
-                      )}
+                      <UserAvatar
+                        url={account.avatarUrl}
+                        name={account.fullName || account.email}
+                        size="sm"
+                      />
                     </motion.button>
                   ))}
                 </div>
