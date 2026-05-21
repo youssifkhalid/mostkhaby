@@ -246,46 +246,51 @@ export const useFollows = () => {
 
   // ── Accept follow request (for receiving follow requests) ──
   const acceptFollowMutation = useMutation({
-    mutationFn: async (followerId: string) => {
+    mutationFn: async (followId: string) => {
       if (!user?.id) throw new Error("User not logged in");
 
       const { data, error } = await supabase
         .from("follows")
         .update({ status: "accepted" })
-        .eq("follower_id", followerId)
-        .eq("following_id", user.id)
+        .eq("id", followId)
         .select()
         .single();
 
       if (error) throw error;
       return data;
     },
-    onMutate: async (followerId: string) => {
+    onMutate: async (followId: string) => {
       qcRef.current.setQueryData(["followers", user?.id], (old: any[] = []) =>
         old.map((f: any) =>
-          f.follower_id === followerId ? { ...f, status: "accepted" } : f
+          f.id === followId ? { ...f, status: "accepted" } : f
         )
       );
+    },
+    onSuccess: () => {
+      qcRef.current.invalidateQueries({ queryKey: ["followers", user?.id] });
+      qcRef.current.invalidateQueries({ queryKey: ["chats", user?.id] });
     },
   });
 
   // ── Reject follow request ────────────────────────────────
   const rejectFollowMutation = useMutation({
-    mutationFn: async (followerId: string) => {
+    mutationFn: async (followId: string) => {
       if (!user?.id) throw new Error("User not logged in");
 
       const { error } = await supabase
         .from("follows")
         .update({ status: "rejected" })
-        .eq("follower_id", followerId)
-        .eq("following_id", user.id);
+        .eq("id", followId);
 
       if (error) throw error;
     },
-    onMutate: async (followerId: string) => {
+    onMutate: async (followId: string) => {
       qcRef.current.setQueryData(["followers", user?.id], (old: any[] = []) =>
-        old.filter((f: any) => f.follower_id !== followerId)
+        old.filter((f: any) => f.id !== followId)
       );
+    },
+    onSuccess: () => {
+      qcRef.current.invalidateQueries({ queryKey: ["followers", user?.id] });
     },
   });
 

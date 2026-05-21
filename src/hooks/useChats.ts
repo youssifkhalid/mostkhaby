@@ -25,7 +25,7 @@ const CHAT_SELECT =
   "user2:profiles!chats_user2_id_fkey(id,username,full_name,avatar_url,is_online,last_seen)";
 
 const MSG_SELECT =
-  "id,content,created_at,sender_id,status,is_read,reply_to_id,is_deleted,is_edited," +
+  "id,content,created_at,sender_id,status,reply_to_id,is_deleted,is_edited," +
   "media_url,media_type,audio_duration,waveform," +
   "sender:profiles!chat_messages_sender_id_fkey(username,full_name,avatar_url)";
 

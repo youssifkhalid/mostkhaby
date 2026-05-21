@@ -35,89 +35,97 @@ const SwipeableChatRow = ({
   const hasUnread = unreadCount > 0;
 
   return (
-    <div className="relative overflow-hidden rounded-2xl">
+    <div className="relative overflow-hidden rounded-2xl group/row">
+      {/* Swipe actions background indicators */}
       <motion.div style={{ opacity: leftOpacity }}
-        className="absolute inset-y-0 left-0 flex items-center pl-4 bg-destructive/20 rounded-2xl pointer-events-none">
-        <Trash2 size={20} className="text-destructive" />
+        className="absolute inset-y-0 left-0 flex items-center pl-4 bg-destructive/15 rounded-2xl pointer-events-none">
+        <Trash2 size={18} className="text-destructive animate-pulse" />
       </motion.div>
       <motion.div style={{ opacity: rightOpacity }}
-        className="absolute inset-y-0 right-0 flex items-center pr-4 bg-amber-500/20 rounded-2xl pointer-events-none">
-        <Pin size={20} className="text-amber-500" />
+        className="absolute inset-y-0 right-0 flex items-center pr-4 bg-amber-500/15 rounded-2xl pointer-events-none">
+        <Pin size={18} className="text-amber-500 animate-bounce" />
       </motion.div>
 
       <motion.div
-        drag="x" dragConstraints={{ left: -80, right: 80 }} dragElastic={0.1}
+        drag="x" dragConstraints={{ left: -80, right: 80 }} dragElastic={0.15}
         onDragEnd={(_: any, info: any) => {
           if (info.offset.x < -60) onDelete(chat.id);
           else if (info.offset.x > 60) onPin(chat.id);
         }}
         style={{ x }}
-        className={`relative glass-card p-4 flex items-center gap-3 transition-all cursor-pointer select-none
-          ${isPinned ? "border border-amber-500/30 bg-amber-500/5" : hasUnread ? "border border-rose-500/30 bg-rose-500/3" : "hover:border-primary/20"}`}
+        className={`relative ultra-glass-card p-4.5 flex items-center gap-3.5 transition-all duration-300 cursor-pointer select-none
+          ${isPinned ? "border-l-4 border-l-amber-500 bg-amber-500/[0.04] shadow-[inset_0_1px_1px_rgba(251,191,36,0.1)]" : ""} 
+          ${hasUnread ? "border-r-4 border-r-rose-500 bg-rose-500/[0.02]" : ""} 
+          hover:scale-[1.01] hover:border-primary/30`}
       >
         {isPinned && (
-          <div className="absolute top-2 left-2">
-            <Pin size={10} className="text-amber-500 rotate-45" />
+          <div className="absolute top-2.5 left-2.5">
+            <Pin size={11} className="text-amber-500 rotate-45 animate-bounce" />
           </div>
         )}
 
-        {/* Action buttons */}
-        <div className="flex flex-col gap-1">
-          <motion.button whileTap={{ scale: 0.85 }}
+        {/* Quick action buttons on the left */}
+        <div className="flex flex-col gap-1.5 opacity-40 group-hover/row:opacity-100 transition-opacity duration-300">
+          <motion.button whileTap={{ scale: 0.8 }}
             onClick={(e) => { e.stopPropagation(); onDelete(chat.id); }}
             className="p-1.5 rounded-xl hover:bg-destructive/15 text-muted-foreground hover:text-destructive transition-all">
-            <Trash2 size={14} />
+            <Trash2 size={13} />
           </motion.button>
-          <motion.button whileTap={{ scale: 0.85 }}
+          <motion.button whileTap={{ scale: 0.8 }}
             onClick={(e) => { e.stopPropagation(); onMute(chat.id); }}
             className="p-1.5 rounded-xl hover:bg-secondary text-muted-foreground transition-all">
-            {isMuted ? <BellOff size={13} className="text-primary" /> : <Bell size={13} />}
+            {isMuted ? <BellOff size={12} className="text-primary" /> : <Bell size={12} />}
           </motion.button>
-          <motion.button whileTap={{ scale: 0.85 }}
+          <motion.button whileTap={{ scale: 0.8 }}
             onClick={(e) => { e.stopPropagation(); onPin(chat.id); }}
             className="p-1.5 rounded-xl hover:bg-amber-500/10 text-muted-foreground hover:text-amber-500 transition-all">
-            <Pin size={13} />
+            <Pin size={12} />
           </motion.button>
         </div>
 
-        {/* Main content */}
-        <button onClick={() => onOpen(chat.id)} className="flex-1 flex items-center gap-3 min-w-0">
+        {/* Clickable body */}
+        <button onClick={() => onOpen(chat.id)} className="flex-1 flex items-center gap-3.5 min-w-0">
           <div className="flex-1 text-right min-w-0">
             <div className="flex items-center justify-end gap-2">
-              {isMuted && <BellOff size={11} className="text-muted-foreground/50" />}
-              <p className={`font-cairo text-sm truncate ${hasUnread ? "font-extrabold text-foreground" : "font-bold text-foreground"}`}>
+              {isMuted && <BellOff size={11} className="text-muted-foreground/45" />}
+              <p className={`font-cairo text-sm truncate tracking-wide ${hasUnread ? "font-bold text-foreground" : "font-semibold text-foreground/90"}`}>
                 {displayName}
               </p>
             </div>
             {chat.last_message_content && (
-              <p className={`text-[11px] line-clamp-1 font-cairo mt-0.5 ${hasUnread ? "text-foreground/70 font-semibold" : "text-muted-foreground"}`}>
+              <p className={`text-[11px] line-clamp-1 font-cairo mt-1 ${hasUnread ? "text-foreground/80 font-bold" : "text-muted-foreground/80"}`}>
                 {chat.last_message_content}
               </p>
             )}
-            <p className="text-[10px] text-muted-foreground/50 mt-0.5 font-cairo">
+            <p className="text-[9px] text-muted-foreground/45 mt-1 font-cairo flex items-center justify-end gap-1">
+              <Clock size={9} />
               {chat.last_message_at
                 ? formatDistanceToNow(new Date(chat.last_message_at), { addSuffix: true, locale: ar })
                 : "محادثة جديدة"}
             </p>
           </div>
 
-          {/* Avatar + unread badge */}
+          {/* Avatar & Unread Count Badge */}
           <div className="relative flex-shrink-0">
             {other?.avatar_url ? (
               <img src={other.avatar_url} alt=""
-                className={`w-[52px] h-[52px] rounded-2xl object-cover ring-2 transition-all ${hasUnread ? "ring-rose-500/60" : "ring-border/20"}`} />
+                className={`w-[54px] h-[54px] rounded-2xl object-cover ring-2 transition-all duration-300 ${hasUnread ? "ring-rose-500 shadow-[0_0_12px_rgba(239,68,68,0.3)]" : "ring-border/15"}`} />
             ) : (
-              <div className={`w-[52px] h-[52px] rounded-2xl gradient-primary flex items-center justify-center text-lg font-bold text-primary-foreground ring-2 transition-all ${hasUnread ? "ring-rose-500/60" : "ring-transparent"}`}>
+              <div className={`w-[54px] h-[54px] rounded-2xl gradient-primary flex items-center justify-center text-lg font-bold text-primary-foreground ring-2 transition-all duration-300 ${hasUnread ? "ring-rose-500 shadow-[0_0_12px_rgba(239,68,68,0.3)]" : "ring-transparent"}`}>
                 {other?.username?.charAt(0)?.toUpperCase() || "?"}
               </div>
             )}
-            <div className="absolute -bottom-0.5 -right-0.5">
+            
+            {/* Pulsing online status indicator */}
+            <div className="absolute -bottom-0.5 -right-0.5 bg-background rounded-full p-0.5 shadow-sm">
               <OnlineIndicator isOnline={other?.is_online || false} />
             </div>
+
+            {/* Glowing Unread Badge */}
             {hasUnread && (
               <motion.div
                 initial={{ scale: 0 }} animate={{ scale: 1 }}
-                className="absolute -top-1.5 -left-1.5 min-w-[20px] h-[20px] rounded-full bg-rose-500 flex items-center justify-center px-1 shadow-[0_0_10px_rgba(239,68,68,0.7)]"
+                className="absolute -top-1.5 -left-1.5 min-w-[20px] h-[20px] rounded-full bg-rose-500 flex items-center justify-center px-1.5 shadow-[0_0_10px_rgba(239,68,68,0.75)] border-2 border-background"
               >
                 <span className="text-[9px] font-extrabold text-white leading-none">
                   {unreadCount > 99 ? "99+" : unreadCount}
@@ -135,34 +143,40 @@ const SwipeableChatRow = ({
 /* ── Friend card ── */
 const FriendCard = ({ person, onChat, onProfile, onBlock, delay }: any) => (
   <motion.div
-    initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay }}
-    className="glass-card p-3 flex items-center gap-3 group hover:border-primary/25 transition-all"
+    initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay }}
+    className="ultra-glass-card p-3.5 flex items-center gap-3.5 group hover:border-primary/30 transition-all duration-300"
   >
     <div className="relative cursor-pointer flex-shrink-0" onClick={() => onProfile(person.username)}>
       {person.avatar_url ? (
-        <img src={person.avatar_url} alt="" className="w-12 h-12 rounded-2xl object-cover ring-2 ring-border/20 group-hover:ring-primary/30 transition-all" />
+        <img src={person.avatar_url} alt="" className="w-12 h-12 rounded-xl object-cover ring-2 ring-border/10 group-hover:ring-primary/40 transition-all duration-300" />
       ) : (
-        <div className="w-12 h-12 rounded-2xl gradient-primary flex items-center justify-center font-bold text-primary-foreground">
+        <div className="w-12 h-12 rounded-xl gradient-primary flex items-center justify-center font-bold text-primary-foreground">
           {person.username?.charAt(0)?.toUpperCase()}
         </div>
       )}
-      {person.is_online && <div className="absolute -bottom-0.5 -right-0.5"><OnlineIndicator isOnline /></div>}
+      {person.is_online && (
+        <div className="absolute -bottom-0.5 -right-0.5 bg-background rounded-full p-0.5">
+          <OnlineIndicator isOnline />
+        </div>
+      )}
     </div>
+    
     <div className="flex-1 text-right min-w-0">
       <p className="font-cairo font-bold text-sm text-foreground truncate">{person.full_name || person.username}</p>
-      <p className="text-[11px] text-muted-foreground font-cairo">@{person.username}</p>
+      <p className="text-[10px] text-muted-foreground/80 font-cairo">@{person.username}</p>
     </div>
-    <div className="flex gap-1.5">
-      <motion.button whileTap={{ scale: 0.88 }} onClick={() => onChat(person.id)}
-        className="p-2 rounded-xl bg-primary/15 text-primary hover:bg-primary/25 transition-all">
+    
+    <div className="flex gap-2">
+      <motion.button whileTap={{ scale: 0.85 }} onClick={() => onChat(person.id)}
+        className="p-2.5 rounded-xl bg-primary/10 text-primary hover:bg-primary hover:text-white transition-all duration-300">
         <MessageCircle size={15} />
       </motion.button>
-      <motion.button whileTap={{ scale: 0.88 }} onClick={() => onProfile(person.username)}
-        className="p-2 rounded-xl bg-accent/15 text-accent hover:bg-accent/25 transition-all">
+      <motion.button whileTap={{ scale: 0.85 }} onClick={() => onProfile(person.username)}
+        className="p-2.5 rounded-xl bg-accent/10 text-accent hover:bg-accent hover:text-accent-foreground transition-all duration-300">
         <ChevronRight size={15} />
       </motion.button>
-      <motion.button whileTap={{ scale: 0.88 }} onClick={() => onBlock(person.id)}
-        className="p-2 rounded-xl bg-destructive/10 text-destructive/60 hover:bg-destructive/20 hover:text-destructive transition-all">
+      <motion.button whileTap={{ scale: 0.85 }} onClick={() => onBlock(person.id)}
+        className="p-2.5 rounded-xl bg-destructive/10 text-destructive/70 hover:bg-destructive hover:text-white transition-all duration-300">
         <Ban size={14} />
       </motion.button>
     </div>
@@ -175,40 +189,46 @@ const RequestCard = ({ req, onAccept, onBlock, onProfile, delay }: any) => {
   if (done) return null;
   return (
     <motion.div
-      initial={{ opacity: 0, scale: 0.92 }} animate={{ opacity: 1, scale: 1 }}
-      exit={{ opacity: 0, x: done === "accepted" ? 80 : -80, scale: 0.8 }}
+      initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, x: done === "accepted" ? 100 : -100, scale: 0.9 }}
       transition={{ delay }}
-      className="glass-card p-4 relative overflow-hidden"
+      className="ultra-glass-card p-4 relative overflow-hidden animate-pulse-breathe border border-primary/20"
+      style={{ "--glow-color": "hsl(var(--primary) / 0.15)" } as any}
     >
-      <div className="absolute inset-0 bg-gradient-to-l from-primary/5 to-transparent pointer-events-none" />
-      <div className="flex items-center gap-3">
+      <div className="absolute inset-0 bg-gradient-to-l from-primary/[0.04] to-transparent pointer-events-none" />
+      <div className="flex items-center gap-3.5">
         <div className="relative cursor-pointer" onClick={() => onProfile(req.follower?.username)}>
           {req.follower?.avatar_url ? (
-            <img src={req.follower.avatar_url} alt="" className="w-[52px] h-[52px] rounded-2xl object-cover" />
+            <img src={req.follower.avatar_url} alt="" className="w-13 h-13 rounded-2xl object-cover border border-border/10" />
           ) : (
-            <div className="w-[52px] h-[52px] rounded-2xl gradient-primary flex items-center justify-center font-bold text-primary-foreground">
+            <div className="w-13 h-13 rounded-2xl gradient-primary flex items-center justify-center font-bold text-primary-foreground">
               {req.follower?.username?.charAt(0)?.toUpperCase()}
             </div>
           )}
-          <div className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-primary flex items-center justify-center">
+          <div className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-primary flex items-center justify-center shadow-lg border border-background">
             <UserPlus size={10} className="text-primary-foreground" />
           </div>
         </div>
-        <div className="flex-1 text-right">
-          <p className="font-cairo font-bold text-sm text-foreground">{req.follower?.full_name || req.follower?.username}</p>
-          <p className="text-[11px] text-muted-foreground font-cairo">@{req.follower?.username}</p>
-          <p className="text-[10px] text-primary/70 font-cairo mt-0.5">يريد متابعتك ✨</p>
+        
+        <div className="flex-1 text-right min-w-0">
+          <p className="font-cairo font-bold text-sm text-foreground truncate">{req.follower?.full_name || req.follower?.username}</p>
+          <p className="text-[10px] text-muted-foreground/85 font-cairo">@{req.follower?.username}</p>
+          <p className="text-[10px] text-primary font-bold font-cairo mt-1 flex items-center justify-end gap-1">
+            <span className="inline-block w-1.5 h-1.5 rounded-full bg-primary animate-ping" />
+            يريد متابعتك ✨
+          </p>
         </div>
+        
         <div className="flex flex-col gap-2">
-          <motion.button whileTap={{ scale: 0.85 }}
+          <motion.button whileTap={{ scale: 0.9 }}
             onClick={() => { setDone("accepted"); onAccept(req.id); }}
-            className="flex items-center gap-1.5 gradient-primary text-primary-foreground text-[11px] px-4 py-2 rounded-xl font-cairo font-bold shadow-[0_2px_10px_hsl(var(--primary)/0.35)]">
-            <Check size={12} /> قبول
+            className="flex items-center gap-1.5 gradient-primary text-primary-foreground text-[11px] px-4 py-2.5 rounded-xl font-cairo font-bold shadow-[0_4px_15px_hsl(var(--primary)/0.35)] hover:brightness-110 transition-all">
+            <Check size={13} /> قبول
           </motion.button>
-          <motion.button whileTap={{ scale: 0.85 }}
+          <motion.button whileTap={{ scale: 0.9 }}
             onClick={() => { setDone("rejected"); onBlock(req.follower?.id); }}
-            className="flex items-center gap-1.5 bg-destructive/15 text-destructive text-[11px] px-4 py-2 rounded-xl font-cairo font-semibold">
-            <X size={12} /> رفض
+            className="flex items-center gap-1.5 bg-destructive/10 text-destructive hover:bg-destructive hover:text-white text-[11px] px-4 py-2.5 rounded-xl font-cairo font-semibold transition-all duration-300">
+            <X size={13} /> رفض
           </motion.button>
         </div>
       </div>
@@ -399,28 +419,49 @@ const ChatsPage = () => {
       className="space-y-3"
     >
 
-      <div className="flex gap-2">
-                <div className="relative flex-1">
-                  <Search size={15} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                  <input value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="ابحث..."
-                    className="w-full bg-secondary/30 rounded-xl py-2.5 pr-9 pl-3 text-sm text-foreground placeholder:text-muted-foreground font-cairo border border-border/20 focus:border-primary/40 focus:outline-none transition-all" />
-                  {searchQuery && (
-                    <button onClick={() => setSearchQuery("")} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
-                      <X size={13} />
-                    </button>
-                  )}
-                </div>
-                <div className="flex gap-1">
-                  {(["all", "online", "unread"] as const).map((f) => (
-                    <motion.button key={f} whileTap={{ scale: 0.9 }} onClick={() => setFilter(f)}
-                      className={`px-2.5 py-1.5 rounded-xl text-[10px] font-cairo font-bold transition-all whitespace-nowrap ${
-                        filter === f ? "gradient-primary text-primary-foreground shadow-[0_2px_10px_hsl(var(--primary)/0.3)]" : "bg-secondary/40 text-muted-foreground"
-                      }`}>
-                      {f === "all" ? "الكل" : f === "online" ? "🟢" : `🔴${totalUnread > 0 ? ` ${totalUnread}` : ""}`}
-                    </motion.button>
-                  ))}
-                </div>
-              </div>
+      <div className="flex gap-2.5 items-center">
+        <div className="relative flex-1 group">
+          <Search size={15} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted-foreground group-focus-within:text-primary transition-colors" />
+          <input
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="ابحث في محادثاتك..."
+            className="input-premium w-full pr-10 pl-9"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery("")}
+              className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <X size={13} />
+            </button>
+          )}
+        </div>
+        <div className="flex gap-1.5 p-1 bg-secondary/20 rounded-xl border border-border/10">
+          {(["all", "online", "unread"] as const).map((f) => {
+            const isActive = filter === f;
+            return (
+              <motion.button
+                key={f}
+                whileTap={{ scale: 0.92 }}
+                onClick={() => setFilter(f)}
+                className={`px-3 py-2 rounded-lg text-[10px] font-cairo font-bold transition-all whitespace-nowrap flex items-center gap-1 ${
+                  isActive
+                    ? "gradient-primary text-primary-foreground shadow-[0_4px_12px_hsl(var(--primary)/0.25)]"
+                    : "text-muted-foreground hover:text-foreground hover:bg-secondary/40"
+                }`}
+              >
+                {f === "all" ? "الكل" : f === "online" ? "🟢 متصل" : `🔴 غير مقروء`}
+                {f === "unread" && totalUnread > 0 && (
+                  <span className={`inline-block px-1 rounded bg-rose-600 text-white font-extrabold text-[8px]`}>
+                    {totalUnread}
+                  </span>
+                )}
+              </motion.button>
+            );
+          })}
+        </div>
+      </div>
 
               {isLoading ? (
                 <div className="flex flex-col items-center py-16 gap-3">

@@ -156,37 +156,39 @@ const ProfilePage = () => {
 
         {/* ───── Avatar with animated ring ───── */}
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-center text-center">
-          <div className="relative mb-4">
-            <div className="absolute -inset-1.5 rounded-[22px] bg-gradient-to-br from-primary via-accent to-primary opacity-70 blur-sm animate-pulse" />
-            <motion.div
-              className="absolute -inset-1 rounded-[20px] border-2 border-primary/50"
-              animate={{ rotate: 360 }}
-              transition={{ duration: 8, repeat: Infinity, ease: "linear" }}
-              style={{ borderStyle: "dashed" }}
-            />
-            <div className="relative">
+          <div className="relative mb-6">
+            {/* Spinning colorful glow ring */}
+            <div className="avatar-orbit-glow animate-ultra-spin opacity-85" />
+            
+            {/* Inner secondary ring for extra premium depth */}
+            <div className="absolute -inset-1 rounded-full border-2 border-dashed border-background/40 z-[5] pointer-events-none" />
+            
+            <div className="relative z-10">
               {profile?.avatar_url ? (
                 <motion.img
                   src={profile.avatar_url}
                   alt=""
-                  className="w-24 h-24 rounded-2xl object-cover border-2 border-background shadow-2xl relative z-10"
-                  whileHover={{ scale: 1.05 }}
-                  transition={{ type: "spring", stiffness: 300 }}
+                  className="w-28 h-28 rounded-full object-cover border-4 border-background shadow-2xl relative z-10"
+                  whileHover={{ scale: 1.04 }}
+                  transition={{ type: "spring", stiffness: 350, damping: 25 }}
                 />
               ) : (
                 <motion.div
-                  className="w-24 h-24 rounded-2xl gradient-primary flex items-center justify-center text-3xl font-bold text-primary-foreground shadow-2xl relative z-10 border-2 border-background"
-                  whileHover={{ scale: 1.05 }}
-                  transition={{ type: "spring", stiffness: 300 }}
+                  className="w-28 h-28 rounded-full gradient-primary flex items-center justify-center text-4xl font-bold text-primary-foreground shadow-2xl relative z-10 border-4 border-background"
+                  whileHover={{ scale: 1.04 }}
+                  transition={{ type: "spring", stiffness: 350, damping: 25 }}
                 >
                   {profile?.full_name?.charAt(0) || profile?.username?.charAt(0)?.toUpperCase() || "M"}
                 </motion.div>
               )}
-              <label className="absolute -bottom-2 -left-2 w-9 h-9 rounded-full gradient-accent flex items-center justify-center text-accent-foreground cursor-pointer shadow-lg z-20 border-2 border-background">
+              
+              {/* Floating Camera Upload Trigger with Glassmorphism */}
+              <label className="absolute -bottom-1 -left-1 w-9 h-9 rounded-full bg-accent text-accent-foreground flex items-center justify-center cursor-pointer shadow-xl z-20 border-2 border-background hover:scale-110 active:scale-95 transition-all">
                 <Camera size={14} />
                 <input type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
               </label>
-              <div className="absolute -top-1 -right-1 z-20">
+              
+              <div className="absolute -top-1 -right-1 z-20 bg-background rounded-full p-0.5">
                 <OnlineIndicator isOnline={true} size="md" />
               </div>
             </div>
