@@ -127,3 +127,38 @@ CREATE POLICY "update_follows" ON public.follows FOR UPDATE TO authenticated
 
 CREATE POLICY "delete_follows" ON public.follows FOR DELETE TO authenticated
   USING (auth.uid() = follower_id OR auth.uid() = following_id);
+
+-- 4) Re-define mark_chat_read to also update chat_messages table statuses to 'read'
+CREATE OR REPLACE FUNCTION public.mark_chat_read(
+  p_chat_id uuid,
+  p_user_id uuid
+)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  -- Verify user is a chat participant
+  IF NOT EXISTS (
+    SELECT 1 FROM public.chats
+    WHERE id = p_chat_id
+      AND (user1_id = p_user_id OR user2_id = p_user_id)
+  ) THEN
+    RETURN;
+  END IF;
+
+  -- Update last_read_at receipt
+  INSERT INTO public.chat_read_receipts (chat_id, user_id, last_read_at)
+  VALUES (p_chat_id, p_user_id, now())
+  ON CONFLICT (chat_id, user_id)
+  DO UPDATE SET last_read_at = EXCLUDED.last_read_at;
+
+  -- Mark all messages sent by the other user in this chat as read
+  UPDATE public.chat_messages
+  SET status = 'read'
+  WHERE chat_id = p_chat_id
+    AND sender_id != p_user_id
+    AND status != 'read';
+END;
+$$;
