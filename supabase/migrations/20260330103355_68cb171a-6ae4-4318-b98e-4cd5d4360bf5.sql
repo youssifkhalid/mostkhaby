@@ -1,7 +1,7 @@
 
 -- Allow sent_by users to also see replies to messages they sent
-CREATE POLICY "Sent_by can see replies"
-ON public.message_replies
+DROP POLICY IF EXISTS "Sent_by can see replies" ON public.message_replies;
+CREATE POLICY "Sent_by can see replies" ON public.message_replies
 FOR SELECT
 TO public
 USING (
@@ -13,8 +13,8 @@ USING (
 );
 
 -- Allow sent_by users to also reply (for reply-to-reply flow)
-CREATE POLICY "Sent_by can reply"
-ON public.message_replies
+DROP POLICY IF EXISTS "Sent_by can reply" ON public.message_replies;
+CREATE POLICY "Sent_by can reply" ON public.message_replies
 FOR INSERT
 TO authenticated
 WITH CHECK (

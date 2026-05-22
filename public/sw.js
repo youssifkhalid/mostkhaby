@@ -1,210 +1,195 @@
-// public/sw.js — UPDATED SERVICE WORKER
+// public/sw.js — Mostkhaby Service Worker (v2)
+//
+// Smart push handling:
+//  • Reads active chat state from IndexedDB written by the client (swBridge.ts)
+//  • Suppresses push if the user is currently focused on the same chat
+//  • Groups notifications per chat via `tag: chat-<chatId>` (auto-collapse on Android/Desktop)
+//  • Click → focus existing client or open /chat/<chatId>
+//  • Optional "Mark read" action via postMessage to the focused client
+//
+// IMPORTANT: this SW is INTENTIONALLY NOT caching app shell — Lovable preview
+// and live deploys need fresh HTML on every navigation. We only handle push.
 
-/**
- * ═══════════════════════════════════════════════════════════════
- * Service Worker — Push Notifications Handler
- * ═══════════════════════════════════════════════════════════════
- *
- * الوظائف:
- * ────────
- * 1. استقبال push notifications من الخادم
- * 2. عرض الإشعارات حتى لو التطبيق مغلق
- * 3. معالجة النقرات على الإشعارات
- * 4. التعامل مع notification actions (open, dismiss, etc)
- */
+const SW_VERSION = "mostkhaby-v2";
+const DB_NAME = "mostkhaby-sw";
+const STORE = "state";
+const KEY = "active";
 
-const CACHE_NAME = "mostkhaby-v1";
-const ASSETS_TO_CACHE = ["/", "/index.html"];
-
-// ── Install Event ────────────────────────────────────────────
+// ── Lifecycle ───────────────────────────────────────────────
 self.addEventListener("install", (event) => {
-  console.log("[SW] Install event");
   self.skipWaiting();
 });
 
-// ── Activate Event ───────────────────────────────────────────
 self.addEventListener("activate", (event) => {
-  console.log("[SW] Activate event");
-  event.waitUntil(clients.claim());
+  event.waitUntil(self.clients.claim());
 });
 
-// ── Fetch Event ──────────────────────────────────────────────
-self.addEventListener("fetch", (event) => {
-  // Only handle GET requests
-  if (event.request.method !== "GET") {
-    return;
-  }
+// No fetch interception — let the network/proxy handle it.
+// (Previous version did network-first; that broke HMR in some cases.)
 
-  // Network first, fallback to cache
-  event.respondWith(
-    fetch(event.request)
-      .catch(() => {
-        return caches.open(CACHE_NAME).then((cache) => {
-          return cache.match(event.request);
-        });
-      })
-  );
-});
-
-// ── Push Notification Event ──────────────────────────────────
-/**
- * This is the critical event for background notifications.
- * Even if the app is closed, this will trigger and show the notification.
- */
-self.addEventListener("push", (event) => {
-  console.log("[SW] Push event received");
-
-  if (!event.data) {
-    console.warn("[SW] Push event with no data");
-    return;
-  }
-
-  let payload;
-  try {
-    payload = event.data.json();
-  } catch (e) {
-    console.warn("[SW] Failed to parse push payload:", e);
-    // Fallback to text
-    payload = {
-      type: "chat_message",
-      title: "رسالة جديدة",
-      body: event.data.text(),
+// ── IndexedDB helper to read active state ────────────────────
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, 1);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE);
     };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function readActiveState() {
+  try {
+    const db = await openDB();
+    const state = await new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE, "readonly");
+      const req = tx.objectStore(STORE).get(KEY);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => reject(req.error);
+    });
+    db.close();
+    return state;
+  } catch {
+    return null;
+  }
+}
+
+async function anyClientFocused() {
+  const list = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+  return list.some((c) => c.focused === true && c.visibilityState === "visible");
+}
+
+// ── In-memory state mirror (updated via postMessage from client) ──
+let memState = { activeChatId: null, isAppActive: false, updatedAt: 0 };
+
+self.addEventListener("message", (event) => {
+  const data = event.data;
+  if (data?.type === "ACTIVE_STATE" && data.state) {
+    memState = data.state;
+  }
+});
+
+// ── Push ────────────────────────────────────────────────────
+self.addEventListener("push", (event) => {
+  event.waitUntil(handlePush(event));
+});
+
+async function handlePush(event) {
+  let payload = {};
+  try {
+    payload = event.data ? event.data.json() : {};
+  } catch {
+    payload = { title: "إشعار جديد", body: event.data ? event.data.text() : "" };
   }
 
-  // ✅ CRITICAL: Only show if it's a chat message
-  // (don't spam users with other notification types)
-  if (payload.type !== "chat_message") {
-    console.log("[SW] Skipping non-chat notification type:", payload.type);
-    return;
+  const {
+    title = "رسالة جديدة",
+    body = "",
+    chatId,
+    msgId,
+    url,
+    icon,
+    badge,
+    type,
+    silent: silentFlag,
+  } = payload;
+
+  // ── Smart suppression for chat messages ────────────────────
+  if (type === "chat_message" && chatId) {
+    // Use in-memory first (fresher), then fallback to IDB
+    let state = memState;
+    if (!state.updatedAt || Date.now() - state.updatedAt > 30_000) {
+      const fromDb = await readActiveState();
+      if (fromDb) state = fromDb;
+    }
+
+    const focused = await anyClientFocused();
+    const sameChat = state.activeChatId === chatId;
+
+    if (focused && sameChat && state.isAppActive) {
+      // User is staring at this chat — don't show OS notification.
+      // Just tell the client to play a tiny tick if it wants to.
+      const list = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+      list.forEach((c) =>
+        c.postMessage({ type: "PUSH_SUPPRESSED", chatId, msgId })
+      );
+      return;
+    }
   }
 
   const notificationOptions = {
-    // ✅ Notification properties
-    body: payload.body || "رسالة جديدة",
-    icon: payload.icon || "/logo-icon.png",
-    badge: payload.badge || "/logo-icon.png",
-    tag: payload.tag || "chat-notification", // Only one per tag
-    renotify: true, // Vibrate again even if same tag replaces old notification
-    requireInteraction: false, // Auto-dismiss after a few seconds
-    silent: false, // Allow sound
-    sound: "/sounds/notification.mp3", // Custom notification sound
-    vibrate: [200, 100, 200], // WhatsApp-like vibration pattern
-    data: {
-      type: payload.type,
-      chatId: payload.chatId,
-      msgId: payload.msgId,
-      url: payload.url || "/",
-    },
-    // ✅ Actions (buttons on the notification)
-    actions: [
-      {
-        action: "open",
-        title: "فتح المحادثة",
-      },
-      {
-        action: "close",
-        title: "إغلاق",
-      },
-    ],
-    // ✅ Visual properties
+    body,
+    icon: icon || "/logo-icon.png",
+    badge: badge || "/logo-icon.png",
+    image: payload.image,
+    tag: chatId ? `chat-${chatId}` : msgId || "general",
+    renotify: false,
+    requireInteraction: false,
+    silent: !!silentFlag,
+    vibrate: silentFlag ? [] : [80, 40, 80],
     timestamp: payload.timestamp || Date.now(),
-    dir: "rtl", // Right-to-left for Arabic
-    lang: "ar",
+    data: { chatId, msgId, url: url || (chatId ? `/chat/${chatId}` : "/") },
+    actions: chatId
+      ? [
+          { action: "open", title: "فتح" },
+          { action: "mark-read", title: "تحديد كمقروء" },
+        ]
+      : [],
   };
 
-  event.waitUntil(
-    // Show the notification
-    self.registration.showNotification(
-      payload.title || "رسالة جديدة",
-      notificationOptions
-    )
-  );
-});
+  await self.registration.showNotification(title, notificationOptions);
 
-// ── Notification Click Event ──────────────────────────────────
-/**
- * Handle user interactions with notifications
- */
+  // Update app badge if supported
+  try {
+    if ("setAppBadge" in self.navigator) {
+      // We don't know exact count here — just bump by 1; client owns the truth.
+      self.navigator.setAppBadge?.(1).catch(() => {});
+    }
+  } catch {}
+}
+
+// ── Notification click ──────────────────────────────────────
 self.addEventListener("notificationclick", (event) => {
-  console.log("[SW] Notification clicked:", event.action);
+  event.notification.close();
+  const action = event.action;
+  const { chatId, msgId, url } = event.notification.data || {};
 
-  const notification = event.notification;
-  const data = notification.data;
-
-  // Close the notification
-  notification.close();
-
-  // Handle different actions
-  if (event.action === "close") {
-    console.log("[SW] User dismissed notification");
+  if (action === "mark-read" && chatId) {
+    // Tell any open client to mark the chat as read; if none, swallow.
+    event.waitUntil(
+      (async () => {
+        const list = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+        list.forEach((c) => c.postMessage({ type: "MARK_CHAT_READ", chatId }));
+      })()
+    );
     return;
   }
 
-  // Default action (click on body) = open the chat
-  const relativeUrl = data.url || "/";
-  const absoluteUrl = new URL(relativeUrl, self.location.origin).href;
+  const targetUrl = url || (chatId ? `/chat/${chatId}` : "/");
 
   event.waitUntil(
-    // Look for existing window
-    clients.matchAll({ type: "window", includeUncontrolled: true })
-      .then((clientList) => {
-        // 1. Check if the exact URL is already open
-        for (const client of clientList) {
-          if (client.url === absoluteUrl && "focus" in client) {
-            return client.focus();
+    (async () => {
+      const list = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+      // Try to focus an existing tab
+      for (const c of list) {
+        try {
+          if ("focus" in c) {
+            await c.focus();
+            c.postMessage({ type: "NAVIGATE", url: targetUrl, chatId, msgId });
+            return;
           }
-        }
-
-        // 2. If not, check if there is ANY window of our app open and navigate it
-        for (const client of clientList) {
-          if ("focus" in client && "navigate" in client) {
-            client.navigate(absoluteUrl);
-            return client.focus();
-          }
-        }
-
-        // 3. Open new window if no window of our app is open
-        if (clients.openWindow) {
-          return clients.openWindow(absoluteUrl);
-        }
-      })
+        } catch {}
+      }
+      // No tab open → open a new one
+      if (self.clients.openWindow) {
+        await self.clients.openWindow(targetUrl);
+      }
+    })()
   );
 });
 
-// ── Notification Close Event ─────────────────────────────────
-self.addEventListener("notificationclose", (event) => {
-  console.log("[SW] Notification closed (dismissed)");
-  // Optional: track that user dismissed the notification
-  // You could send analytics here if needed
+self.addEventListener("notificationclose", () => {
+  /* analytics hook (no-op) */
 });
-
-// ── Message Event (for communication with app) ────────────────
-self.addEventListener("message", (event) => {
-  console.log("[SW] Message received:", event.data);
-
-  if (event.data && event.data.type === "SKIP_WAITING") {
-    self.skipWaiting();
-  }
-});
-
-// ── Background Sync (for offline support) ───────────────────
-/**
- * Optional: Retry failed requests when coming back online
- * Uncomment if you want offline support
- */
-/*
-self.addEventListener("sync", (event) => {
-  console.log("[SW] Background sync:", event.tag);
-
-  if (event.tag === "sync-messages") {
-    event.waitUntil(
-      fetch("/api/sync-messages")
-        .then(() => console.log("[SW] Sync successful"))
-        .catch((e) => console.warn("[SW] Sync failed:", e))
-    );
-  }
-});
-*/
-
-console.log("[SW] Service Worker loaded and ready");

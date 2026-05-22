@@ -13,8 +13,8 @@
 -- 2. CHATS — fix UPDATE policy (too broad previously)
 -- ────────────────────────────────────────────────────────────
 DROP POLICY IF EXISTS "Chat participants can update" ON public.chats;
-CREATE POLICY "Chat participants can update"
-  ON public.chats FOR UPDATE TO authenticated
+DROP POLICY IF EXISTS "Chat participants can update" ON public.chats;
+CREATE POLICY "Chat participants can update" ON public.chats FOR UPDATE TO authenticated
   USING (auth.uid() = user1_id OR auth.uid() = user2_id)
   WITH CHECK (auth.uid() = user1_id OR auth.uid() = user2_id);
 
@@ -29,8 +29,8 @@ DROP POLICY IF EXISTS "Chat participants can update message status" ON public.ch
 DROP POLICY IF EXISTS "Senders can update own chat messages" ON public.chat_messages;
 
 -- Recipient can mark messages as read (update status/is_read only)
-CREATE POLICY "Recipients can mark messages read"
-  ON public.chat_messages FOR UPDATE TO authenticated
+DROP POLICY IF EXISTS "Recipients can mark messages read" ON public.chat_messages;
+CREATE POLICY "Recipients can mark messages read" ON public.chat_messages FOR UPDATE TO authenticated
   USING (
     sender_id != auth.uid()
     AND EXISTS (
@@ -49,8 +49,8 @@ CREATE POLICY "Recipients can mark messages read"
   );
 
 -- Sender can edit/soft-delete own messages
-CREATE POLICY "Senders can update own chat messages"
-  ON public.chat_messages FOR UPDATE TO authenticated
+DROP POLICY IF EXISTS "Senders can update own chat messages" ON public.chat_messages;
+CREATE POLICY "Senders can update own chat messages" ON public.chat_messages FOR UPDATE TO authenticated
   USING (auth.uid() = sender_id)
   WITH CHECK (auth.uid() = sender_id);
 
@@ -76,12 +76,12 @@ CREATE TABLE IF NOT EXISTS public.chat_read_receipts (
 
 ALTER TABLE public.chat_read_receipts ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Users read own receipts"
-  ON public.chat_read_receipts FOR SELECT TO authenticated
+DROP POLICY IF EXISTS "Users read own receipts" ON public.chat_read_receipts;
+CREATE POLICY "Users read own receipts" ON public.chat_read_receipts FOR SELECT TO authenticated
   USING (auth.uid() = user_id);
 
-CREATE POLICY "Users upsert own receipts"
-  ON public.chat_read_receipts FOR INSERT TO authenticated
+DROP POLICY IF EXISTS "Users upsert own receipts" ON public.chat_read_receipts;
+CREATE POLICY "Users upsert own receipts" ON public.chat_read_receipts FOR INSERT TO authenticated
   WITH CHECK (
     auth.uid() = user_id
     AND EXISTS (
@@ -91,8 +91,8 @@ CREATE POLICY "Users upsert own receipts"
     )
   );
 
-CREATE POLICY "Users update own receipts"
-  ON public.chat_read_receipts FOR UPDATE TO authenticated
+DROP POLICY IF EXISTS "Users update own receipts" ON public.chat_read_receipts;
+CREATE POLICY "Users update own receipts" ON public.chat_read_receipts FOR UPDATE TO authenticated
   USING (auth.uid() = user_id)
   WITH CHECK (auth.uid() = user_id);
 
@@ -190,6 +190,7 @@ $$;
 DROP TRIGGER IF EXISTS on_chat_message_update_chat ON public.chat_messages;
 DROP TRIGGER IF EXISTS update_chat_last_message_trigger ON public.chat_messages;
 
+DROP TRIGGER IF EXISTS on_chat_message_update_chat ON public.chat_messages;
 CREATE TRIGGER on_chat_message_update_chat
   AFTER INSERT ON public.chat_messages
   FOR EACH ROW EXECUTE FUNCTION public.update_chat_last_message();
@@ -208,16 +209,16 @@ DROP POLICY IF EXISTS "Anon can send messages" ON public.messages;
 DROP POLICY IF EXISTS "Auth anon send messages" ON public.messages;
 
 -- Allow authenticated users to insert notifications (for follow/like triggers)
-CREATE POLICY "System insert notifications"
-  ON public.notifications FOR INSERT
+DROP POLICY IF EXISTS "System insert notifications" ON public.notifications;
+CREATE POLICY "System insert notifications" ON public.notifications FOR INSERT
   WITH CHECK (true);  -- triggers use SECURITY DEFINER; client won't call this directly
 
 -- ────────────────────────────────────────────────────────────
 -- 10. FOLLOWS — add UPDATE policy for cancel pending follow
 -- ────────────────────────────────────────────────────────────
 DROP POLICY IF EXISTS "Followers can cancel pending follow" ON public.follows;
-CREATE POLICY "Followers can cancel pending follow"
-  ON public.follows FOR UPDATE TO authenticated
+DROP POLICY IF EXISTS "Followers can cancel pending follow" ON public.follows;
+CREATE POLICY "Followers can cancel pending follow" ON public.follows FOR UPDATE TO authenticated
   USING (auth.uid() = follower_id)
   WITH CHECK (auth.uid() = follower_id);
 
@@ -235,19 +236,27 @@ ALTER TABLE public.push_subscriptions
 --    + REPLICA IDENTITY FULL for proper UPDATE payloads
 -- ────────────────────────────────────────────────────────────
 DO $$ BEGIN
+  DO $mig$ BEGIN
   ALTER PUBLICATION supabase_realtime ADD TABLE public.chat_messages;
+EXCEPTION WHEN duplicate_object THEN NULL; END $mig$;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 DO $$ BEGIN
+  DO $mig$ BEGIN
   ALTER PUBLICATION supabase_realtime ADD TABLE public.chats;
+EXCEPTION WHEN duplicate_object THEN NULL; END $mig$;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 DO $$ BEGIN
+  DO $mig$ BEGIN
   ALTER PUBLICATION supabase_realtime ADD TABLE public.notifications;
+EXCEPTION WHEN duplicate_object THEN NULL; END $mig$;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 DO $$ BEGIN
+  DO $mig$ BEGIN
   ALTER PUBLICATION supabase_realtime ADD TABLE public.chat_read_receipts;
+EXCEPTION WHEN duplicate_object THEN NULL; END $mig$;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 ALTER TABLE public.chat_messages    REPLICA IDENTITY FULL;

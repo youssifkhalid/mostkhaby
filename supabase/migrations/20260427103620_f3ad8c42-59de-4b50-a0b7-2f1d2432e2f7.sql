@@ -3,7 +3,7 @@
 -- =========================================
 
 -- 1) Posts table
-CREATE TABLE public.posts (
+CREATE TABLE IF NOT EXISTS public.posts (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   author_id uuid NOT NULL,
   caption text,
@@ -18,13 +18,13 @@ CREATE TABLE public.posts (
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX idx_posts_author ON public.posts(author_id);
-CREATE INDEX idx_posts_created ON public.posts(created_at DESC);
-CREATE INDEX idx_posts_privacy ON public.posts(privacy);
-CREATE INDEX idx_posts_hashtags ON public.posts USING GIN(hashtags);
+CREATE INDEX IF NOT EXISTS idx_posts_author ON public.posts(author_id);
+CREATE INDEX IF NOT EXISTS idx_posts_created ON public.posts(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_posts_privacy ON public.posts(privacy);
+CREATE INDEX IF NOT EXISTS idx_posts_hashtags ON public.posts USING GIN(hashtags);
 
 -- 2) Post media (carousel support)
-CREATE TABLE public.post_media (
+CREATE TABLE IF NOT EXISTS public.post_media (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   post_id uuid NOT NULL REFERENCES public.posts(id) ON DELETE CASCADE,
   url text NOT NULL,
@@ -35,21 +35,21 @@ CREATE TABLE public.post_media (
   duration integer,
   created_at timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX idx_post_media_post ON public.post_media(post_id, position);
+CREATE INDEX IF NOT EXISTS idx_post_media_post ON public.post_media(post_id, position);
 
 -- 3) Likes
-CREATE TABLE public.post_likes (
+CREATE TABLE IF NOT EXISTS public.post_likes (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   post_id uuid NOT NULL REFERENCES public.posts(id) ON DELETE CASCADE,
   user_id uuid NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE(post_id, user_id)
 );
-CREATE INDEX idx_post_likes_user ON public.post_likes(user_id);
-CREATE INDEX idx_post_likes_post ON public.post_likes(post_id);
+CREATE INDEX IF NOT EXISTS idx_post_likes_user ON public.post_likes(user_id);
+CREATE INDEX IF NOT EXISTS idx_post_likes_post ON public.post_likes(post_id);
 
 -- 4) Comments
-CREATE TABLE public.post_comments (
+CREATE TABLE IF NOT EXISTS public.post_comments (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   post_id uuid NOT NULL REFERENCES public.posts(id) ON DELETE CASCADE,
   user_id uuid NOT NULL,
@@ -59,21 +59,21 @@ CREATE TABLE public.post_comments (
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX idx_post_comments_post ON public.post_comments(post_id, created_at DESC);
-CREATE INDEX idx_post_comments_parent ON public.post_comments(parent_id);
+CREATE INDEX IF NOT EXISTS idx_post_comments_post ON public.post_comments(post_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_post_comments_parent ON public.post_comments(parent_id);
 
 -- 5) Saved posts
-CREATE TABLE public.saved_posts (
+CREATE TABLE IF NOT EXISTS public.saved_posts (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   post_id uuid NOT NULL REFERENCES public.posts(id) ON DELETE CASCADE,
   user_id uuid NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE(post_id, user_id)
 );
-CREATE INDEX idx_saved_posts_user ON public.saved_posts(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_saved_posts_user ON public.saved_posts(user_id, created_at DESC);
 
 -- 6) Reports
-CREATE TABLE public.post_reports (
+CREATE TABLE IF NOT EXISTS public.post_reports (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   post_id uuid NOT NULL REFERENCES public.posts(id) ON DELETE CASCADE,
   reporter_id uuid NOT NULL,
@@ -81,7 +81,7 @@ CREATE TABLE public.post_reports (
   status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','reviewed','dismissed')),
   created_at timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX idx_post_reports_post ON public.post_reports(post_id);
+CREATE INDEX IF NOT EXISTS idx_post_reports_post ON public.post_reports(post_id);
 
 -- =========================================
 -- HELPER: can_view_post (avoids recursion)
@@ -122,8 +122,8 @@ ALTER TABLE public.post_reports ENABLE ROW LEVEL SECURITY;
 -- =========================================
 -- POSTS POLICIES
 -- =========================================
-CREATE POLICY "Public posts visible to all auth"
-  ON public.posts FOR SELECT TO authenticated
+DROP POLICY IF EXISTS "Public posts visible to all auth" ON public.posts;
+CREATE POLICY "Public posts visible to all auth" ON public.posts FOR SELECT TO authenticated
   USING (
     privacy = 'public'
     OR author_id = auth.uid()
@@ -135,34 +135,34 @@ CREATE POLICY "Public posts visible to all auth"
     ))
   );
 
-CREATE POLICY "Users insert own posts"
-  ON public.posts FOR INSERT TO authenticated
+DROP POLICY IF EXISTS "Users insert own posts" ON public.posts;
+CREATE POLICY "Users insert own posts" ON public.posts FOR INSERT TO authenticated
   WITH CHECK (auth.uid() = author_id);
 
-CREATE POLICY "Users update own posts"
-  ON public.posts FOR UPDATE TO authenticated
+DROP POLICY IF EXISTS "Users update own posts" ON public.posts;
+CREATE POLICY "Users update own posts" ON public.posts FOR UPDATE TO authenticated
   USING (auth.uid() = author_id)
   WITH CHECK (auth.uid() = author_id);
 
-CREATE POLICY "Users delete own posts"
-  ON public.posts FOR DELETE TO authenticated
+DROP POLICY IF EXISTS "Users delete own posts" ON public.posts;
+CREATE POLICY "Users delete own posts" ON public.posts FOR DELETE TO authenticated
   USING (auth.uid() = author_id);
 
 -- =========================================
 -- POST MEDIA POLICIES
 -- =========================================
-CREATE POLICY "Media follows post visibility"
-  ON public.post_media FOR SELECT TO authenticated
+DROP POLICY IF EXISTS "Media follows post visibility" ON public.post_media;
+CREATE POLICY "Media follows post visibility" ON public.post_media FOR SELECT TO authenticated
   USING (public.can_view_post(post_id, auth.uid()));
 
-CREATE POLICY "Authors insert own media"
-  ON public.post_media FOR INSERT TO authenticated
+DROP POLICY IF EXISTS "Authors insert own media" ON public.post_media;
+CREATE POLICY "Authors insert own media" ON public.post_media FOR INSERT TO authenticated
   WITH CHECK (EXISTS (
     SELECT 1 FROM public.posts p WHERE p.id = post_media.post_id AND p.author_id = auth.uid()
   ));
 
-CREATE POLICY "Authors delete own media"
-  ON public.post_media FOR DELETE TO authenticated
+DROP POLICY IF EXISTS "Authors delete own media" ON public.post_media;
+CREATE POLICY "Authors delete own media" ON public.post_media FOR DELETE TO authenticated
   USING (EXISTS (
     SELECT 1 FROM public.posts p WHERE p.id = post_media.post_id AND p.author_id = auth.uid()
   ));
@@ -170,62 +170,62 @@ CREATE POLICY "Authors delete own media"
 -- =========================================
 -- LIKES POLICIES
 -- =========================================
-CREATE POLICY "Likes visible if post visible"
-  ON public.post_likes FOR SELECT TO authenticated
+DROP POLICY IF EXISTS "Likes visible if post visible" ON public.post_likes;
+CREATE POLICY "Likes visible if post visible" ON public.post_likes FOR SELECT TO authenticated
   USING (public.can_view_post(post_id, auth.uid()));
 
-CREATE POLICY "Users like visible posts"
-  ON public.post_likes FOR INSERT TO authenticated
+DROP POLICY IF EXISTS "Users like visible posts" ON public.post_likes;
+CREATE POLICY "Users like visible posts" ON public.post_likes FOR INSERT TO authenticated
   WITH CHECK (auth.uid() = user_id AND public.can_view_post(post_id, auth.uid()));
 
-CREATE POLICY "Users unlike own likes"
-  ON public.post_likes FOR DELETE TO authenticated
+DROP POLICY IF EXISTS "Users unlike own likes" ON public.post_likes;
+CREATE POLICY "Users unlike own likes" ON public.post_likes FOR DELETE TO authenticated
   USING (auth.uid() = user_id);
 
 -- =========================================
 -- COMMENTS POLICIES
 -- =========================================
-CREATE POLICY "Comments visible if post visible"
-  ON public.post_comments FOR SELECT TO authenticated
+DROP POLICY IF EXISTS "Comments visible if post visible" ON public.post_comments;
+CREATE POLICY "Comments visible if post visible" ON public.post_comments FOR SELECT TO authenticated
   USING (public.can_view_post(post_id, auth.uid()));
 
-CREATE POLICY "Users comment on visible posts"
-  ON public.post_comments FOR INSERT TO authenticated
+DROP POLICY IF EXISTS "Users comment on visible posts" ON public.post_comments;
+CREATE POLICY "Users comment on visible posts" ON public.post_comments FOR INSERT TO authenticated
   WITH CHECK (auth.uid() = user_id AND public.can_view_post(post_id, auth.uid()));
 
-CREATE POLICY "Users update own comments"
-  ON public.post_comments FOR UPDATE TO authenticated
+DROP POLICY IF EXISTS "Users update own comments" ON public.post_comments;
+CREATE POLICY "Users update own comments" ON public.post_comments FOR UPDATE TO authenticated
   USING (auth.uid() = user_id)
   WITH CHECK (auth.uid() = user_id);
 
-CREATE POLICY "Users delete own comments"
-  ON public.post_comments FOR DELETE TO authenticated
+DROP POLICY IF EXISTS "Users delete own comments" ON public.post_comments;
+CREATE POLICY "Users delete own comments" ON public.post_comments FOR DELETE TO authenticated
   USING (auth.uid() = user_id);
 
 -- =========================================
 -- SAVED POSTS POLICIES
 -- =========================================
-CREATE POLICY "Users see own saves"
-  ON public.saved_posts FOR SELECT TO authenticated
+DROP POLICY IF EXISTS "Users see own saves" ON public.saved_posts;
+CREATE POLICY "Users see own saves" ON public.saved_posts FOR SELECT TO authenticated
   USING (auth.uid() = user_id);
 
-CREATE POLICY "Users save visible posts"
-  ON public.saved_posts FOR INSERT TO authenticated
+DROP POLICY IF EXISTS "Users save visible posts" ON public.saved_posts;
+CREATE POLICY "Users save visible posts" ON public.saved_posts FOR INSERT TO authenticated
   WITH CHECK (auth.uid() = user_id AND public.can_view_post(post_id, auth.uid()));
 
-CREATE POLICY "Users unsave own saves"
-  ON public.saved_posts FOR DELETE TO authenticated
+DROP POLICY IF EXISTS "Users unsave own saves" ON public.saved_posts;
+CREATE POLICY "Users unsave own saves" ON public.saved_posts FOR DELETE TO authenticated
   USING (auth.uid() = user_id);
 
 -- =========================================
 -- REPORTS POLICIES
 -- =========================================
-CREATE POLICY "Users insert own reports"
-  ON public.post_reports FOR INSERT TO authenticated
+DROP POLICY IF EXISTS "Users insert own reports" ON public.post_reports;
+CREATE POLICY "Users insert own reports" ON public.post_reports FOR INSERT TO authenticated
   WITH CHECK (auth.uid() = reporter_id);
 
-CREATE POLICY "Users view own reports"
-  ON public.post_reports FOR SELECT TO authenticated
+DROP POLICY IF EXISTS "Users view own reports" ON public.post_reports;
+CREATE POLICY "Users view own reports" ON public.post_reports FOR SELECT TO authenticated
   USING (auth.uid() = reporter_id);
 
 -- =========================================
@@ -241,6 +241,7 @@ BEGIN
   END IF;
   RETURN NULL;
 END; $$;
+DROP TRIGGER IF EXISTS trg_post_likes_count ON public.post_likes;
 CREATE TRIGGER trg_post_likes_count
 AFTER INSERT OR DELETE ON public.post_likes
 FOR EACH ROW EXECUTE FUNCTION public.bump_post_likes();
@@ -255,6 +256,7 @@ BEGIN
   END IF;
   RETURN NULL;
 END; $$;
+DROP TRIGGER IF EXISTS trg_post_comments_count ON public.post_comments;
 CREATE TRIGGER trg_post_comments_count
 AFTER INSERT OR DELETE ON public.post_comments
 FOR EACH ROW EXECUTE FUNCTION public.bump_post_comments();
@@ -269,15 +271,18 @@ BEGIN
   END IF;
   RETURN NULL;
 END; $$;
+DROP TRIGGER IF EXISTS trg_post_saves_count ON public.saved_posts;
 CREATE TRIGGER trg_post_saves_count
 AFTER INSERT OR DELETE ON public.saved_posts
 FOR EACH ROW EXECUTE FUNCTION public.bump_post_saves();
 
 -- updated_at trigger
+DROP TRIGGER IF EXISTS trg_posts_updated ON public.posts;
 CREATE TRIGGER trg_posts_updated
 BEFORE UPDATE ON public.posts
 FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
+DROP TRIGGER IF EXISTS trg_post_comments_updated ON public.post_comments;
 CREATE TRIGGER trg_post_comments_updated
 BEFORE UPDATE ON public.post_comments
 FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
@@ -289,25 +294,31 @@ INSERT INTO storage.buckets (id, name, public)
 VALUES ('posts-media', 'posts-media', true)
 ON CONFLICT (id) DO NOTHING;
 
-CREATE POLICY "Posts media public read"
-  ON storage.objects FOR SELECT
+DROP POLICY IF EXISTS "Posts media public read" ON storage.objects;
+CREATE POLICY "Posts media public read" ON storage.objects FOR SELECT
   USING (bucket_id = 'posts-media');
 
-CREATE POLICY "Users upload own posts media"
-  ON storage.objects FOR INSERT TO authenticated
+DROP POLICY IF EXISTS "Users upload own posts media" ON storage.objects;
+CREATE POLICY "Users upload own posts media" ON storage.objects FOR INSERT TO authenticated
   WITH CHECK (
     bucket_id = 'posts-media'
     AND auth.uid()::text = (storage.foldername(name))[1]
   );
 
-CREATE POLICY "Users delete own posts media"
-  ON storage.objects FOR DELETE TO authenticated
+DROP POLICY IF EXISTS "Users delete own posts media" ON storage.objects;
+CREATE POLICY "Users delete own posts media" ON storage.objects FOR DELETE TO authenticated
   USING (
     bucket_id = 'posts-media'
     AND auth.uid()::text = (storage.foldername(name))[1]
   );
 
 -- Realtime
-ALTER PUBLICATION supabase_realtime ADD TABLE public.posts;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.post_likes;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.post_comments;
+DO $mig$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.posts;
+EXCEPTION WHEN duplicate_object THEN NULL; END $mig$;
+DO $mig$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.post_likes;
+EXCEPTION WHEN duplicate_object THEN NULL; END $mig$;
+DO $mig$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.post_comments;
+EXCEPTION WHEN duplicate_object THEN NULL; END $mig$;

@@ -38,12 +38,24 @@ FOR EACH ROW
 EXECUTE FUNCTION public.update_updated_at_column();
 
 -- Ensure realtime is enabled for key tables
-ALTER PUBLICATION supabase_realtime ADD TABLE public.messages;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.message_replies;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.notifications;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.chats;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.chat_messages;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.profiles;
+DO $mig$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.messages;
+EXCEPTION WHEN duplicate_object THEN NULL; END $mig$;
+DO $mig$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.message_replies;
+EXCEPTION WHEN duplicate_object THEN NULL; END $mig$;
+DO $mig$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.notifications;
+EXCEPTION WHEN duplicate_object THEN NULL; END $mig$;
+DO $mig$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.chats;
+EXCEPTION WHEN duplicate_object THEN NULL; END $mig$;
+DO $mig$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.chat_messages;
+EXCEPTION WHEN duplicate_object THEN NULL; END $mig$;
+DO $mig$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.profiles;
+EXCEPTION WHEN duplicate_object THEN NULL; END $mig$;
 
 -- Add rate limiting: server-side check function
 CREATE OR REPLACE FUNCTION public.check_message_rate_limit()

@@ -8,6 +8,6 @@ ALTER TABLE public.messages ADD COLUMN IF NOT EXISTS sent_by uuid REFERENCES pub
 UPDATE public.messages SET sent_by = sender_id WHERE sender_id IS NOT NULL AND sent_by IS NULL;
 
 -- RLS: Allow users to see messages they sent (via sent_by)
-CREATE POLICY "Users can view messages they sent via sent_by"
-ON public.messages FOR SELECT
+DROP POLICY IF EXISTS "Users can view messages they sent via sent_by" ON public.messages;
+CREATE POLICY "Users can view messages they sent via sent_by" ON public.messages FOR SELECT
 USING (auth.uid() = sent_by);

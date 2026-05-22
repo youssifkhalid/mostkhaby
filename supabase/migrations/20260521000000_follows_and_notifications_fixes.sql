@@ -115,16 +115,20 @@ DROP POLICY IF EXISTS "update_follows" ON public.follows;
 DROP POLICY IF EXISTS "delete_follows" ON public.follows;
 
 -- Recreate robust policies allowing both parties of a follow relationship to safely view, update, or delete it.
+DROP POLICY IF EXISTS "see_own_follows" ON public.follows;
 CREATE POLICY "see_own_follows" ON public.follows FOR SELECT TO authenticated
   USING (auth.uid() = follower_id OR auth.uid() = following_id);
 
+DROP POLICY IF EXISTS "insert_own_follow" ON public.follows;
 CREATE POLICY "insert_own_follow" ON public.follows FOR INSERT TO authenticated
   WITH CHECK (auth.uid() = follower_id);
 
+DROP POLICY IF EXISTS "update_follows" ON public.follows;
 CREATE POLICY "update_follows" ON public.follows FOR UPDATE TO authenticated
   USING (auth.uid() = follower_id OR auth.uid() = following_id)
   WITH CHECK (auth.uid() = follower_id OR auth.uid() = following_id);
 
+DROP POLICY IF EXISTS "delete_follows" ON public.follows;
 CREATE POLICY "delete_follows" ON public.follows FOR DELETE TO authenticated
   USING (auth.uid() = follower_id OR auth.uid() = following_id);
 

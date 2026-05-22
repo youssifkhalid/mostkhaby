@@ -64,6 +64,7 @@ $function$;
 
 -- Ensure trigger exists ONCE (drop duplicates if any)
 DROP TRIGGER IF EXISTS trg_notify_on_new_chat_message ON public.chat_messages;
+DROP TRIGGER IF EXISTS trg_notify_on_new_chat_message ON public.chat_messages;
 CREATE TRIGGER trg_notify_on_new_chat_message
   AFTER INSERT ON public.chat_messages
   FOR EACH ROW EXECUTE FUNCTION public.notify_on_new_chat_message();
@@ -76,19 +77,29 @@ CREATE INDEX IF NOT EXISTS idx_profiles_online ON public.profiles(is_online, las
 
 -- Ensure realtime publication includes critical tables
 DO $$ BEGIN
+  DO $mig$ BEGIN
   ALTER PUBLICATION supabase_realtime ADD TABLE public.chat_messages;
+EXCEPTION WHEN duplicate_object THEN NULL; END $mig$;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN
+  DO $mig$ BEGIN
   ALTER PUBLICATION supabase_realtime ADD TABLE public.chats;
+EXCEPTION WHEN duplicate_object THEN NULL; END $mig$;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN
+  DO $mig$ BEGIN
   ALTER PUBLICATION supabase_realtime ADD TABLE public.profiles;
+EXCEPTION WHEN duplicate_object THEN NULL; END $mig$;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN
+  DO $mig$ BEGIN
   ALTER PUBLICATION supabase_realtime ADD TABLE public.calls;
+EXCEPTION WHEN duplicate_object THEN NULL; END $mig$;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN
+  DO $mig$ BEGIN
   ALTER PUBLICATION supabase_realtime ADD TABLE public.notifications;
+EXCEPTION WHEN duplicate_object THEN NULL; END $mig$;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- Set REPLICA IDENTITY FULL for tables that need full row in updates

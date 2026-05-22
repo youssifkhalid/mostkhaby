@@ -137,6 +137,7 @@ END;
 $$;
 
 DROP TRIGGER IF EXISTS trg_set_message_initial_status ON public.chat_messages;
+DROP TRIGGER IF EXISTS trg_set_message_initial_status ON public.chat_messages;
 CREATE TRIGGER trg_set_message_initial_status
   BEFORE INSERT ON public.chat_messages
   FOR EACH ROW
@@ -187,6 +188,7 @@ BEGIN
 END;
 $$;
 
+DROP TRIGGER IF EXISTS trg_on_follow_update ON public.follows;
 DROP TRIGGER IF EXISTS trg_on_follow_update ON public.follows;
 CREATE TRIGGER trg_on_follow_update
   AFTER UPDATE OF status ON public.follows

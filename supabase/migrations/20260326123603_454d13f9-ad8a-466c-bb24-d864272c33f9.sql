@@ -13,10 +13,13 @@ BEGIN
 END;
 $$;
 
+DROP TRIGGER IF EXISTS on_new_message ON public.messages;
 CREATE TRIGGER on_new_message
   AFTER INSERT ON public.messages
   FOR EACH ROW
   EXECUTE FUNCTION public.notify_on_new_message();
 
 -- Enable realtime for notifications
-ALTER PUBLICATION supabase_realtime ADD TABLE public.notifications;
+DO $mig$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.notifications;
+EXCEPTION WHEN duplicate_object THEN NULL; END $mig$;

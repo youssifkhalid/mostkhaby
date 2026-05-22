@@ -1,6 +1,6 @@
 
 -- Create profiles table
-CREATE TABLE public.profiles (
+CREATE TABLE IF NOT EXISTS public.profiles (
   id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE PRIMARY KEY,
   username TEXT NOT NULL UNIQUE,
   full_name TEXT,
@@ -14,17 +14,17 @@ CREATE TABLE public.profiles (
 
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Profiles are viewable by everyone"
-  ON public.profiles FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Profiles are viewable by everyone" ON public.profiles;
+CREATE POLICY "Profiles are viewable by everyone" ON public.profiles FOR SELECT USING (true);
 
-CREATE POLICY "Users can update own profile"
-  ON public.profiles FOR UPDATE USING (auth.uid() = id);
+DROP POLICY IF EXISTS "Users can update own profile" ON public.profiles;
+CREATE POLICY "Users can update own profile" ON public.profiles FOR UPDATE USING (auth.uid() = id);
 
-CREATE POLICY "Users can insert own profile"
-  ON public.profiles FOR INSERT WITH CHECK (auth.uid() = id);
+DROP POLICY IF EXISTS "Users can insert own profile" ON public.profiles;
+CREATE POLICY "Users can insert own profile" ON public.profiles FOR INSERT WITH CHECK (auth.uid() = id);
 
 -- Create messages table
-CREATE TABLE public.messages (
+CREATE TABLE IF NOT EXISTS public.messages (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   receiver_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
   sender_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
@@ -37,20 +37,20 @@ CREATE TABLE public.messages (
 
 ALTER TABLE public.messages ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Anyone can send messages"
-  ON public.messages FOR INSERT WITH CHECK (true);
+DROP POLICY IF EXISTS "Anyone can send messages" ON public.messages;
+CREATE POLICY "Anyone can send messages" ON public.messages FOR INSERT WITH CHECK (true);
 
-CREATE POLICY "Receivers can view their messages"
-  ON public.messages FOR SELECT USING (auth.uid() = receiver_id);
+DROP POLICY IF EXISTS "Receivers can view their messages" ON public.messages;
+CREATE POLICY "Receivers can view their messages" ON public.messages FOR SELECT USING (auth.uid() = receiver_id);
 
-CREATE POLICY "Receivers can update their messages"
-  ON public.messages FOR UPDATE USING (auth.uid() = receiver_id);
+DROP POLICY IF EXISTS "Receivers can update their messages" ON public.messages;
+CREATE POLICY "Receivers can update their messages" ON public.messages FOR UPDATE USING (auth.uid() = receiver_id);
 
-CREATE POLICY "Receivers can delete their messages"
-  ON public.messages FOR DELETE USING (auth.uid() = receiver_id);
+DROP POLICY IF EXISTS "Receivers can delete their messages" ON public.messages;
+CREATE POLICY "Receivers can delete their messages" ON public.messages FOR DELETE USING (auth.uid() = receiver_id);
 
 -- Create notifications table
-CREATE TABLE public.notifications (
+CREATE TABLE IF NOT EXISTS public.notifications (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
   type TEXT NOT NULL DEFAULT 'message',
@@ -61,17 +61,17 @@ CREATE TABLE public.notifications (
 
 ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Users can view own notifications"
-  ON public.notifications FOR SELECT USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "Users can view own notifications" ON public.notifications;
+CREATE POLICY "Users can view own notifications" ON public.notifications FOR SELECT USING (auth.uid() = user_id);
 
-CREATE POLICY "Users can update own notifications"
-  ON public.notifications FOR UPDATE USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "Users can update own notifications" ON public.notifications;
+CREATE POLICY "Users can update own notifications" ON public.notifications FOR UPDATE USING (auth.uid() = user_id);
 
-CREATE POLICY "System can insert notifications"
-  ON public.notifications FOR INSERT WITH CHECK (true);
+DROP POLICY IF EXISTS "System can insert notifications" ON public.notifications;
+CREATE POLICY "System can insert notifications" ON public.notifications FOR INSERT WITH CHECK (true);
 
 -- Create user_settings table
-CREATE TABLE public.user_settings (
+CREATE TABLE IF NOT EXISTS public.user_settings (
   user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE PRIMARY KEY,
   email_notifications BOOLEAN NOT NULL DEFAULT true,
   push_notifications BOOLEAN NOT NULL DEFAULT true,
@@ -82,14 +82,14 @@ CREATE TABLE public.user_settings (
 
 ALTER TABLE public.user_settings ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Users can view own settings"
-  ON public.user_settings FOR SELECT USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "Users can view own settings" ON public.user_settings;
+CREATE POLICY "Users can view own settings" ON public.user_settings FOR SELECT USING (auth.uid() = user_id);
 
-CREATE POLICY "Users can update own settings"
-  ON public.user_settings FOR UPDATE USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "Users can update own settings" ON public.user_settings;
+CREATE POLICY "Users can update own settings" ON public.user_settings FOR UPDATE USING (auth.uid() = user_id);
 
-CREATE POLICY "Users can insert own settings"
-  ON public.user_settings FOR INSERT WITH CHECK (auth.uid() = user_id);
+DROP POLICY IF EXISTS "Users can insert own settings" ON public.user_settings;
+CREATE POLICY "Users can insert own settings" ON public.user_settings FOR INSERT WITH CHECK (auth.uid() = user_id);
 
 -- Function to update timestamps
 CREATE OR REPLACE FUNCTION public.update_updated_at_column()
@@ -100,10 +100,12 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SET search_path = public;
 
+DROP TRIGGER IF EXISTS update_profiles_updated_at ON public.profiles;
 CREATE TRIGGER update_profiles_updated_at
   BEFORE UPDATE ON public.profiles
   FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_user_settings_updated_at ON public.user_settings;
 CREATE TRIGGER update_user_settings_updated_at
   BEFORE UPDATE ON public.user_settings
   FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
@@ -124,27 +126,29 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
 -- Indexes
-CREATE INDEX idx_messages_receiver_id ON public.messages(receiver_id);
-CREATE INDEX idx_messages_created_at ON public.messages(created_at DESC);
-CREATE INDEX idx_notifications_user_id ON public.notifications(user_id);
-CREATE INDEX idx_profiles_username ON public.profiles(username);
+CREATE INDEX IF NOT EXISTS idx_messages_receiver_id ON public.messages(receiver_id);
+CREATE INDEX IF NOT EXISTS idx_messages_created_at ON public.messages(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON public.notifications(user_id);
+CREATE INDEX IF NOT EXISTS idx_profiles_username ON public.profiles(username);
 
 -- Storage bucket for avatars
-INSERT INTO storage.buckets (id, name, public) VALUES ('avatars', 'avatars', true);
+INSERT INTO storage.buckets (id, name, public) VALUES ('avatars', 'avatars', true)
+ON CONFLICT (id) DO NOTHING;
 
-CREATE POLICY "Avatar images are publicly accessible"
-  ON storage.objects FOR SELECT USING (bucket_id = 'avatars');
+DROP POLICY IF EXISTS "Avatar images are publicly accessible" ON storage.objects;
+CREATE POLICY "Avatar images are publicly accessible" ON storage.objects FOR SELECT USING (bucket_id = 'avatars');
 
-CREATE POLICY "Users can upload their own avatar"
-  ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'avatars' AND auth.uid()::text = (storage.foldername(name))[1]);
+DROP POLICY IF EXISTS "Users can upload their own avatar" ON storage.objects;
+CREATE POLICY "Users can upload their own avatar" ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'avatars' AND auth.uid()::text = (storage.foldername(name))[1]);
 
-CREATE POLICY "Users can update their own avatar"
-  ON storage.objects FOR UPDATE USING (bucket_id = 'avatars' AND auth.uid()::text = (storage.foldername(name))[1]);
+DROP POLICY IF EXISTS "Users can update their own avatar" ON storage.objects;
+CREATE POLICY "Users can update their own avatar" ON storage.objects FOR UPDATE USING (bucket_id = 'avatars' AND auth.uid()::text = (storage.foldername(name))[1]);
 
-CREATE POLICY "Users can delete their own avatar"
-  ON storage.objects FOR DELETE USING (bucket_id = 'avatars' AND auth.uid()::text = (storage.foldername(name))[1]);
+DROP POLICY IF EXISTS "Users can delete their own avatar" ON storage.objects;
+CREATE POLICY "Users can delete their own avatar" ON storage.objects FOR DELETE USING (bucket_id = 'avatars' AND auth.uid()::text = (storage.foldername(name))[1]);

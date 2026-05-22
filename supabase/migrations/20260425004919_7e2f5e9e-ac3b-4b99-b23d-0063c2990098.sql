@@ -1,6 +1,7 @@
 
 -- Allow chat participants (not just owner) to read media referenced in their chat_messages
 DROP POLICY IF EXISTS "Chat media: participants read" ON storage.objects;
+DROP POLICY IF EXISTS "Chat media: participants read" ON storage.objects;
 CREATE POLICY "Chat media: participants read" ON storage.objects
   FOR SELECT TO authenticated
   USING (

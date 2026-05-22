@@ -4,49 +4,63 @@ BEGIN
     SELECT 1 FROM pg_publication_tables
     WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'messages'
   ) THEN
-    ALTER PUBLICATION supabase_realtime ADD TABLE public.messages;
+    DO $mig$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.messages;
+EXCEPTION WHEN duplicate_object THEN NULL; END $mig$;
   END IF;
 
   IF NOT EXISTS (
     SELECT 1 FROM pg_publication_tables
     WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'message_replies'
   ) THEN
-    ALTER PUBLICATION supabase_realtime ADD TABLE public.message_replies;
+    DO $mig$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.message_replies;
+EXCEPTION WHEN duplicate_object THEN NULL; END $mig$;
   END IF;
 
   IF NOT EXISTS (
     SELECT 1 FROM pg_publication_tables
     WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'notifications'
   ) THEN
-    ALTER PUBLICATION supabase_realtime ADD TABLE public.notifications;
+    DO $mig$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.notifications;
+EXCEPTION WHEN duplicate_object THEN NULL; END $mig$;
   END IF;
 
   IF NOT EXISTS (
     SELECT 1 FROM pg_publication_tables
     WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'chats'
   ) THEN
-    ALTER PUBLICATION supabase_realtime ADD TABLE public.chats;
+    DO $mig$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.chats;
+EXCEPTION WHEN duplicate_object THEN NULL; END $mig$;
   END IF;
 
   IF NOT EXISTS (
     SELECT 1 FROM pg_publication_tables
     WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'chat_messages'
   ) THEN
-    ALTER PUBLICATION supabase_realtime ADD TABLE public.chat_messages;
+    DO $mig$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.chat_messages;
+EXCEPTION WHEN duplicate_object THEN NULL; END $mig$;
   END IF;
 
   IF NOT EXISTS (
     SELECT 1 FROM pg_publication_tables
     WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'profiles'
   ) THEN
-    ALTER PUBLICATION supabase_realtime ADD TABLE public.profiles;
+    DO $mig$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.profiles;
+EXCEPTION WHEN duplicate_object THEN NULL; END $mig$;
   END IF;
 
   IF NOT EXISTS (
     SELECT 1 FROM pg_publication_tables
     WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'follows'
   ) THEN
-    ALTER PUBLICATION supabase_realtime ADD TABLE public.follows;
+    DO $mig$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.follows;
+EXCEPTION WHEN duplicate_object THEN NULL; END $mig$;
   END IF;
 END
 $$;
@@ -107,7 +121,8 @@ BEGIN
     FROM pg_trigger
     WHERE tgname = 'on_chat_message_notify'
   ) THEN
-    CREATE TRIGGER on_chat_message_notify
+    DROP TRIGGER IF EXISTS on_chat_message_notify ON public.chat_messages;
+CREATE TRIGGER on_chat_message_notify
     AFTER INSERT ON public.chat_messages
     FOR EACH ROW
     EXECUTE FUNCTION public.notify_on_new_chat_message();

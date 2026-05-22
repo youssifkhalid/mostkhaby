@@ -25,6 +25,7 @@ END;
 $$;
 
 DROP TRIGGER IF EXISTS trg_notify_on_new_call ON public.calls;
+DROP TRIGGER IF EXISTS trg_notify_on_new_call ON public.calls;
 CREATE TRIGGER trg_notify_on_new_call
 AFTER INSERT ON public.calls
 FOR EACH ROW EXECUTE FUNCTION public.notify_on_new_call();
@@ -35,6 +36,8 @@ BEGIN
     SELECT 1 FROM pg_publication_tables
     WHERE pubname = 'supabase_realtime' AND schemaname='public' AND tablename='chat_reactions'
   ) THEN
-    EXECUTE 'ALTER PUBLICATION supabase_realtime ADD TABLE public.chat_reactions';
+    EXECUTE 'DO $mig$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.chat_reactions';
+EXCEPTION WHEN duplicate_object THEN NULL; END $mig$;
   END IF;
 END $$;

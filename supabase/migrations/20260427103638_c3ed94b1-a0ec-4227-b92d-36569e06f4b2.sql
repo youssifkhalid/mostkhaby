@@ -1,7 +1,7 @@
 -- Lock down public bucket listing: only allow direct file access via known path
 DROP POLICY IF EXISTS "Posts media public read" ON storage.objects;
-CREATE POLICY "Posts media public read"
-  ON storage.objects FOR SELECT
+DROP POLICY IF EXISTS "Posts media public read" ON storage.objects;
+CREATE POLICY "Posts media public read" ON storage.objects FOR SELECT
   USING (
     bucket_id = 'posts-media'
     AND (storage.foldername(name))[1] IS NOT NULL

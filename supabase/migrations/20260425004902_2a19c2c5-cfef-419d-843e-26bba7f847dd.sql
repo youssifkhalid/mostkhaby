@@ -30,19 +30,24 @@ CREATE INDEX IF NOT EXISTS idx_calls_callee ON public.calls(callee_id, status);
 ALTER TABLE public.calls ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Participants can view calls" ON public.calls;
+DROP POLICY IF EXISTS "Participants can view calls" ON public.calls;
 CREATE POLICY "Participants can view calls" ON public.calls
   FOR SELECT USING (auth.uid() = caller_id OR auth.uid() = callee_id);
 
+DROP POLICY IF EXISTS "Authenticated can create calls" ON public.calls;
 DROP POLICY IF EXISTS "Authenticated can create calls" ON public.calls;
 CREATE POLICY "Authenticated can create calls" ON public.calls
   FOR INSERT TO authenticated WITH CHECK (auth.uid() = caller_id);
 
 DROP POLICY IF EXISTS "Participants can update calls" ON public.calls;
+DROP POLICY IF EXISTS "Participants can update calls" ON public.calls;
 CREATE POLICY "Participants can update calls" ON public.calls
   FOR UPDATE USING (auth.uid() = caller_id OR auth.uid() = callee_id);
 
 -- Realtime
-ALTER PUBLICATION supabase_realtime ADD TABLE public.calls;
+DO $mig$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.calls;
+EXCEPTION WHEN duplicate_object THEN NULL; END $mig$;
 
 -- 4) Storage bucket for chat media (private)
 INSERT INTO storage.buckets (id, name, public)
@@ -51,15 +56,18 @@ ON CONFLICT (id) DO NOTHING;
 
 -- Storage policies: users own folder = their user id
 DROP POLICY IF EXISTS "Chat media: owner read" ON storage.objects;
+DROP POLICY IF EXISTS "Chat media: owner read" ON storage.objects;
 CREATE POLICY "Chat media: owner read" ON storage.objects
   FOR SELECT TO authenticated
   USING (bucket_id = 'chat-media' AND auth.uid()::text = (storage.foldername(name))[1]);
 
 DROP POLICY IF EXISTS "Chat media: owner insert" ON storage.objects;
+DROP POLICY IF EXISTS "Chat media: owner insert" ON storage.objects;
 CREATE POLICY "Chat media: owner insert" ON storage.objects
   FOR INSERT TO authenticated
   WITH CHECK (bucket_id = 'chat-media' AND auth.uid()::text = (storage.foldername(name))[1]);
 
+DROP POLICY IF EXISTS "Chat media: owner delete" ON storage.objects;
 DROP POLICY IF EXISTS "Chat media: owner delete" ON storage.objects;
 CREATE POLICY "Chat media: owner delete" ON storage.objects
   FOR DELETE TO authenticated
@@ -109,12 +117,14 @@ $function$;
 
 -- Make sure trigger exists
 DROP TRIGGER IF EXISTS notify_on_new_chat_message_trigger ON public.chat_messages;
+DROP TRIGGER IF EXISTS notify_on_new_chat_message_trigger ON public.chat_messages;
 CREATE TRIGGER notify_on_new_chat_message_trigger
   AFTER INSERT ON public.chat_messages
   FOR EACH ROW
   EXECUTE FUNCTION public.notify_on_new_chat_message();
 
 -- update_chat_last_message trigger - ensure it exists
+DROP TRIGGER IF EXISTS update_chat_last_message_trigger ON public.chat_messages;
 DROP TRIGGER IF EXISTS update_chat_last_message_trigger ON public.chat_messages;
 CREATE TRIGGER update_chat_last_message_trigger
   AFTER INSERT ON public.chat_messages

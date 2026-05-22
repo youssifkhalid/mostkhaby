@@ -19,12 +19,16 @@ DROP POLICY IF EXISTS "Users manage own push subs insert" ON public.push_subscri
 DROP POLICY IF EXISTS "Users manage own push subs delete" ON public.push_subscriptions;
 DROP POLICY IF EXISTS "Users manage own push subs update" ON public.push_subscriptions;
 
+DROP POLICY IF EXISTS "Users manage own push subs select" ON public.push_subscriptions;
 CREATE POLICY "Users manage own push subs select" ON public.push_subscriptions
   FOR SELECT TO authenticated USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "Users manage own push subs insert" ON public.push_subscriptions;
 CREATE POLICY "Users manage own push subs insert" ON public.push_subscriptions
   FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
+DROP POLICY IF EXISTS "Users manage own push subs delete" ON public.push_subscriptions;
 CREATE POLICY "Users manage own push subs delete" ON public.push_subscriptions
   FOR DELETE TO authenticated USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "Users manage own push subs update" ON public.push_subscriptions;
 CREATE POLICY "Users manage own push subs update" ON public.push_subscriptions
   FOR UPDATE TO authenticated USING (auth.uid() = user_id);
 
@@ -35,14 +39,17 @@ ALTER TABLE public.chat_messages
   ADD COLUMN IF NOT EXISTS is_edited boolean NOT NULL DEFAULT false;
 
 DROP POLICY IF EXISTS "Senders can update own chat messages" ON public.chat_messages;
+DROP POLICY IF EXISTS "Senders can update own chat messages" ON public.chat_messages;
 CREATE POLICY "Senders can update own chat messages" ON public.chat_messages
   FOR UPDATE TO authenticated USING (auth.uid() = sender_id) WITH CHECK (auth.uid() = sender_id);
 
+DROP POLICY IF EXISTS "Senders can delete own chat messages" ON public.chat_messages;
 DROP POLICY IF EXISTS "Senders can delete own chat messages" ON public.chat_messages;
 CREATE POLICY "Senders can delete own chat messages" ON public.chat_messages
   FOR DELETE TO authenticated USING (auth.uid() = sender_id);
 
 -- 3) Allow system (security definer triggers) to insert notifications
+DROP POLICY IF EXISTS "System can insert notifications" ON public.notifications;
 DROP POLICY IF EXISTS "System can insert notifications" ON public.notifications;
 CREATE POLICY "System can insert notifications" ON public.notifications
   FOR INSERT TO authenticated, anon WITH CHECK (true);
@@ -170,22 +177,27 @@ $$;
 
 -- Recreate triggers (idempotent)
 DROP TRIGGER IF EXISTS on_new_message_notify ON public.messages;
+DROP TRIGGER IF EXISTS on_new_message_notify ON public.messages;
 CREATE TRIGGER on_new_message_notify AFTER INSERT ON public.messages
   FOR EACH ROW EXECUTE FUNCTION public.notify_on_new_message();
 
+DROP TRIGGER IF EXISTS on_new_chat_message_notify ON public.chat_messages;
 DROP TRIGGER IF EXISTS on_new_chat_message_notify ON public.chat_messages;
 CREATE TRIGGER on_new_chat_message_notify AFTER INSERT ON public.chat_messages
   FOR EACH ROW EXECUTE FUNCTION public.notify_on_new_chat_message();
 
 DROP TRIGGER IF EXISTS on_reply_notify ON public.message_replies;
+DROP TRIGGER IF EXISTS on_reply_notify ON public.message_replies;
 CREATE TRIGGER on_reply_notify AFTER INSERT ON public.message_replies
   FOR EACH ROW EXECUTE FUNCTION public.notify_on_reply();
 
+DROP TRIGGER IF EXISTS on_follow_notify ON public.follows;
 DROP TRIGGER IF EXISTS on_follow_notify ON public.follows;
 CREATE TRIGGER on_follow_notify AFTER INSERT ON public.follows
   FOR EACH ROW EXECUTE FUNCTION public.notify_on_follow();
 
 -- Ensure update trigger for chat last message exists
+DROP TRIGGER IF EXISTS on_chat_message_update_chat ON public.chat_messages;
 DROP TRIGGER IF EXISTS on_chat_message_update_chat ON public.chat_messages;
 CREATE TRIGGER on_chat_message_update_chat AFTER INSERT ON public.chat_messages
   FOR EACH ROW EXECUTE FUNCTION public.update_chat_last_message();
@@ -193,7 +205,10 @@ CREATE TRIGGER on_chat_message_update_chat AFTER INSERT ON public.chat_messages
 -- Ensure realtime
 ALTER TABLE public.chat_messages REPLICA IDENTITY FULL;
 ALTER TABLE public.chat_reactions REPLICA IDENTITY FULL;
-
-DO $$ BEGIN
-  EXECUTE 'ALTER PUBLICATION supabase_realtime ADD TABLE public.chat_reactions';
-EXCEPTION WHEN duplicate_object THEN NULL; WHEN others THEN NULL; END $$;
+DO $$
+BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.chat_reactions;
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+  WHEN others THEN NULL;
+END $$;

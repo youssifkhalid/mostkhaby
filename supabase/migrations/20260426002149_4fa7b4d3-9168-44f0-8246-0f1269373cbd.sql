@@ -12,17 +12,22 @@ CREATE TABLE IF NOT EXISTS public.contact_nicknames (
 
 ALTER TABLE public.contact_nicknames ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users view own nicknames" ON public.contact_nicknames;
 CREATE POLICY "Users view own nicknames" ON public.contact_nicknames
   FOR SELECT USING (auth.uid() = owner_id);
+DROP POLICY IF EXISTS "Users insert own nicknames" ON public.contact_nicknames;
 CREATE POLICY "Users insert own nicknames" ON public.contact_nicknames
   FOR INSERT WITH CHECK (auth.uid() = owner_id);
+DROP POLICY IF EXISTS "Users update own nicknames" ON public.contact_nicknames;
 CREATE POLICY "Users update own nicknames" ON public.contact_nicknames
   FOR UPDATE USING (auth.uid() = owner_id);
+DROP POLICY IF EXISTS "Users delete own nicknames" ON public.contact_nicknames;
 CREATE POLICY "Users delete own nicknames" ON public.contact_nicknames
   FOR DELETE USING (auth.uid() = owner_id);
 
 CREATE INDEX IF NOT EXISTS idx_contact_nicknames_owner ON public.contact_nicknames(owner_id);
 
+DROP TRIGGER IF EXISTS update_contact_nicknames_updated_at ON public.contact_nicknames;
 CREATE TRIGGER update_contact_nicknames_updated_at
   BEFORE UPDATE ON public.contact_nicknames
   FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
