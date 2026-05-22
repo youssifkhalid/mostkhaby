@@ -11,6 +11,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useChatMessages, useTypingIndicator } from "@/hooks/useChats";
 import { useChatReactions, useChatMessageActions } from "@/hooks/useChatActions";
 import { useAuth } from "@/hooks/useAuth";
+import { useActiveChat } from "@/contexts/ActiveChatContext";
 import { useVoiceRecorder } from "@/hooks/useVoiceRecorder";
 import { useMediaUpload } from "@/hooks/useMediaUpload";
 import { supabase } from "@/integrations/supabase/client";
@@ -457,6 +458,24 @@ const ChatPage = () => {
   const { editMessage, deleteMessage } = useChatMessageActions(chatId);
   const messageIds = (messages as Msg[]).map((m) => m.id);
   const { byMessage: reactionsByMessage, toggleReaction } = useChatReactions(chatId, messageIds);
+
+  /* ─── Active-chat tracking (notification suppression) ─── */
+  const { setActiveChat } = useActiveChat();
+  useEffect(() => {
+    if (!chatId) return;
+    setActiveChat(chatId);
+    // Tell the server we're focused on this chat (for server-side push suppression)
+    void supabase.rpc("set_user_presence", { p_active_chat_id: chatId, p_is_online: true });
+    const beat = window.setInterval(() => {
+      void supabase.rpc("set_user_presence", { p_active_chat_id: chatId, p_is_online: true });
+    }, 20_000);
+    return () => {
+      window.clearInterval(beat);
+      setActiveChat(null);
+      void supabase.rpc("set_user_presence", { p_active_chat_id: null, p_is_online: true });
+    };
+  }, [chatId, setActiveChat]);
+
 
   /* State */
   const [text, setText] = useState("");

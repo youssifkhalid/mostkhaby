@@ -6,6 +6,8 @@ export interface ChatUser {
   id: string;
   name: string;
   avatar_url?: string | null;
+  is_online?: boolean;
+  last_seen?: string | null;
 }
 
 export interface Reaction {

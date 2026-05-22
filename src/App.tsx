@@ -1,21 +1,24 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Route, Routes, useLocation } from "react-router-dom";
+import { BrowserRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { LanguageProvider } from "@/contexts/LanguageContext";
 import { AuthProvider } from "@/contexts/AuthContext";
-import { lazy, Suspense } from "react";
+import { ActiveChatProvider } from "@/contexts/ActiveChatContext";
+import { lazy, Suspense, useEffect } from "react";
 import { Loader2 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import AuthGuard from "@/components/AuthGuard";
 import FloatingBackground from "@/components/FloatingBackground";
+import FloatingNotification from "@/components/FloatingNotification";
 import BottomNav from "@/components/BottomNav";
 import IncomingCallListener from "@/components/IncomingCallListener";
 import PushAutoSubscribe from "@/components/PushAutoSubscribe";
 import GlobalMessageListener from "@/components/GlobalMessageListener";
+import { attachSWNavigationBridge } from "@/lib/swBridge";
 
 const Index             = lazy(() => import("./pages/Index"));
 const ProfilePage       = lazy(() => import("./pages/ProfilePage"));
@@ -63,6 +66,12 @@ function OnlineStatusSync() {
  *  2. user != null     (في يوزر مسجّل فعلًا)
  * قبل كده: بنعرض الـ Routes بس (صفحة auth أو loading)
  */
+function SWNavigationBridge() {
+  const navigate = useNavigate();
+  useEffect(() => attachSWNavigationBridge((url) => navigate(url)), [navigate]);
+  return null;
+}
+
 function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
 
@@ -79,10 +88,13 @@ function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
       <GlobalMessageListener />
       <IncomingCallListener />
       <PushAutoSubscribe />
+      <FloatingNotification />
+      <SWNavigationBridge />
       <BottomNav />
     </>
   );
 }
+
 
 const PageTransition = ({ children }: { children: React.ReactNode }) => {
   return (
@@ -98,10 +110,25 @@ const PageTransition = ({ children }: { children: React.ReactNode }) => {
   );
 };
 
+// Reserved paths that must NEVER be treated as a username
+const RESERVED_USERNAMES = new Set([
+  "auth", "about", "index", "profile", "inbox", "settings",
+  "notifications", "chats", "chat", "call", "community", "send", "u",
+]);
+
+function UsernameRouteGuard() {
+  const location = useLocation();
+  const first = location.pathname.split("/")[1] ?? "";
+  if (!first || RESERVED_USERNAMES.has(first.toLowerCase())) {
+    return <PageTransition><NotFound /></PageTransition>;
+  }
+  return <PageTransition><SendMessagePage /></PageTransition>;
+}
+
 function AnimatedRoutes() {
   const location = useLocation();
   return (
-    <AnimatePresence>
+    <AnimatePresence mode="wait" initial={false}>
       <Routes location={location} key={location.pathname}>
         <Route path="/auth"           element={<PageTransition><AuthPage /></PageTransition>} />
         <Route path="/about"          element={<PageTransition><AboutPage /></PageTransition>} />
@@ -116,7 +143,7 @@ function AnimatedRoutes() {
         <Route path="/call/:chatId"   element={<AuthGuard><PageTransition><CallPage /></PageTransition></AuthGuard>} />
         <Route path="/community"      element={<AuthGuard><PageTransition><CommunityPage /></PageTransition></AuthGuard>} />
         <Route path="/send/:username" element={<PageTransition><SendMessagePage /></PageTransition>} />
-        <Route path="/:username"      element={<PageTransition><SendMessagePage /></PageTransition>} />
+        <Route path="/:username"      element={<UsernameRouteGuard />} />
         <Route path="*"               element={<PageTransition><NotFound /></PageTransition>} />
       </Routes>
     </AnimatePresence>
@@ -128,19 +155,21 @@ const App = () => (
     <AuthProvider>
       <ThemeProvider>
         <LanguageProvider>
-          <TooltipProvider>
-            <Sonner position="top-center" />
-            <BrowserRouter>
-              <FloatingBackground />
-              <div className="relative z-10">
-                <AuthenticatedLayout>
-                  <Suspense fallback={<PageLoader />}>
-                    <AnimatedRoutes />
-                  </Suspense>
-                </AuthenticatedLayout>
-              </div>
-            </BrowserRouter>
-          </TooltipProvider>
+          <ActiveChatProvider>
+            <TooltipProvider>
+              <Sonner position="top-center" />
+              <BrowserRouter>
+                <FloatingBackground />
+                <div className="relative z-10">
+                  <AuthenticatedLayout>
+                    <Suspense fallback={<PageLoader />}>
+                      <AnimatedRoutes />
+                    </Suspense>
+                  </AuthenticatedLayout>
+                </div>
+              </BrowserRouter>
+            </TooltipProvider>
+          </ActiveChatProvider>
         </LanguageProvider>
       </ThemeProvider>
     </AuthProvider>

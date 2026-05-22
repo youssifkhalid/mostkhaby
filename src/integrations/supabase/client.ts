@@ -90,8 +90,9 @@ const clientOptions = {
    CREATE CLIENT
 ════════════════════════════════════════════════════════════════ */
 
-export const supabase: SupabaseClient<Database> =
-  createClient<Database>(
+// NOTE: generated types incomplete — using untyped client until types are regenerated.
+export const supabase: any =
+  createClient(
     SUPABASE_URL,
     SUPABASE_ANON_KEY,
     clientOptions

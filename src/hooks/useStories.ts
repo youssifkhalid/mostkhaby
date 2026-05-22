@@ -364,7 +364,7 @@ export const useHighlights = (userId?: string) => {
         return {
           ...h,
           story_count: sids.length,
-          first_story_url: h.cover_url || first?.media_url,
+          first_story_url: h.cover_url || (first as any)?.media_url,
         };
       });
     },

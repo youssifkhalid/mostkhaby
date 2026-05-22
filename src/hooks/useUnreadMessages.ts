@@ -71,6 +71,24 @@ export const useUnreadMessages = () => {
     [unreadCounts]
   );
 
+  // ── Sync PWA app badge + document title ───────────────────
+  useEffect(() => {
+    // App badge (PWA, supported in Chrome/Edge/Safari iOS 16.4+)
+    try {
+      const nav: any = navigator;
+      if (typeof nav.setAppBadge === "function") {
+        if (totalUnread > 0) nav.setAppBadge(totalUnread).catch(() => {});
+        else nav.clearAppBadge?.().catch(() => {});
+      }
+    } catch {}
+    // Document title
+    if (typeof document !== "undefined") {
+      const base = "مستخبي";
+      document.title = totalUnread > 0 ? `(${totalUnread}) ${base}` : base;
+    }
+  }, [totalUnread]);
+
+
   // ── clearChatUnread — optimistic + DB ─────────────────────
   /**
    * 1. Optimistic: badge disappears instantly

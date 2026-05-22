@@ -115,7 +115,9 @@ export const useOnlineStatus = () => {
     intervalRef.current = setInterval(() => {
       if (!document.hidden) {
         setOnlineDb(true);
-        // نحدّث presence track كذلك
+        // Also refresh user_presence for server-side push suppression
+        const activeChatId = (() => { try { return sessionStorage.getItem("activeChatId"); } catch { return null; } })();
+        void supabase.rpc("set_user_presence", { p_active_chat_id: activeChatId, p_is_online: true });
         channelRef.current?.track({
           user_id: user.id,
           online_at: new Date().toISOString(),
