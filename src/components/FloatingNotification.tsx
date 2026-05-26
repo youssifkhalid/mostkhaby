@@ -1,205 +1,94 @@
-import { useEffect, useState, useCallback } from "react";
+/**
+ * FloatingNotification — in-app preview card (top, swipe-to-dismiss).
+ * Shown ONLY when notificationRouter decides to surface a preview
+ * (i.e. user is in-app but NOT in the same chat).
+ */
+
+import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/hooks/useAuth";
-import { useSettings } from "@/hooks/useSettings";
-import { Bell, Heart, Users, MessageSquare, UserPlus, AlertCircle, CheckCircle2, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { notificationRouter, type IncomingPreview } from "@/lib/notificationRouter";
+import UserAvatar from "@/components/UserAvatar";
+import { MessageCircle } from "lucide-react";
 
-interface Notification {
-  id: string;
-  type: "message" | "follow" | "reply" | "friend" | "system";
-  content: string;
-  createdAt: string;
-  read: boolean;
-  relatedId?: string;
-}
+const AUTO_HIDE_MS = 4500;
 
-interface FloatingNotifConfig {
-  icon: React.ReactNode;
-  bgColor: string;
-  textColor: string;
-  borderColor: string;
-  label: string;
-}
-
-const getNotifConfig = (type: string): FloatingNotifConfig => {
-  const configs: Record<string, FloatingNotifConfig> = {
-    message: {
-      icon: <MessageSquare size={20} />,
-      bgColor: "from-blue-600 to-blue-700",
-      textColor: "text-blue-900",
-      borderColor: "border-blue-300",
-      label: "رسالة جديدة",
-    },
-    follow: {
-      icon: <UserPlus size={20} />,
-      bgColor: "from-purple-600 to-purple-700",
-      textColor: "text-purple-900",
-      borderColor: "border-purple-300",
-      label: "متابع جديد",
-    },
-    reply: {
-      icon: <Heart size={20} />,
-      bgColor: "from-pink-600 to-pink-700",
-      textColor: "text-pink-900",
-      borderColor: "border-pink-300",
-      label: "رد جديد",
-    },
-    friend: {
-      icon: <Users size={20} />,
-      bgColor: "from-green-600 to-green-700",
-      textColor: "text-green-900",
-      borderColor: "border-green-300",
-      label: "صديق جديد",
-    },
-    system: {
-      icon: <AlertCircle size={20} />,
-      bgColor: "from-amber-600 to-amber-700",
-      textColor: "text-amber-900",
-      borderColor: "border-amber-300",
-      label: "تنبيه نظام",
-    },
-  };
-  return configs[type] || configs.system;
-};
-
-const FloatingNotification = () => {
-  const { user } = useAuth();
-  const { settings } = useSettings();
+export default function FloatingNotification() {
+  const [preview, setPreview] = useState<IncomingPreview | null>(null);
   const navigate = useNavigate();
-  const [notifications, setNotifications] = useState<Notification[]>([]);
 
-  const dismissNotification = useCallback((id: string) => {
-    setNotifications((prev) => prev.filter((n) => n.id !== id));
+  useEffect(() => {
+    let hideTimer: number | undefined;
+    const unsub = notificationRouter.subscribe((p) => {
+      if (hideTimer) window.clearTimeout(hideTimer);
+      setPreview(p);
+      if (p) {
+        hideTimer = window.setTimeout(() => setPreview(null), AUTO_HIDE_MS);
+      }
+    });
+    return () => {
+      unsub();
+      if (hideTimer) window.clearTimeout(hideTimer);
+    };
   }, []);
 
-  const handleNotificationClick = useCallback(
-    (notif: Notification) => {
-      dismissNotification(notif.id);
-
-      // Navigate based on notification type
-      if (notif.type === "message") {
-        navigate("/chats");
-      } else if (notif.type === "follow" || notif.type === "reply") {
-        navigate("/notifications");
-      } else if (notif.type === "friend" && notif.relatedId) {
-        navigate(`/${notif.relatedId}`);
-      }
-    },
-    [navigate, dismissNotification]
-  );
-
-  // Listen for new notifications
-  useEffect(() => {
-    if (!user?.id) return;
-
-    const channel = supabase
-      .channel(`floating-notif-${user.id}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "notifications",
-          filter: `user_id=eq.${user.id}`,
-        },
-        (payload) => {
-          const newNotif: Notification = {
-            id: payload.new.id,
-            type: payload.new.type,
-            content: payload.new.content,
-            createdAt: payload.new.created_at,
-            read: payload.new.is_read,
-            relatedId: payload.new.related_user_id,
-          };
-
-          // Don't show floating notification for message type (handled by toast)
-          if (newNotif.type === "message") return;
-
-          setNotifications((prev) => [newNotif, ...prev].slice(0, 3));
-
-          // Auto-dismiss after 5 seconds
-          const timer = setTimeout(
-            () => dismissNotification(newNotif.id),
-            5000
-          );
-
-          return () => clearTimeout(timer);
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [user?.id, dismissNotification]);
+  const handleOpen = () => {
+    if (!preview) return;
+    navigate(`/chat/${preview.chatId}`);
+    setPreview(null);
+  };
 
   return (
-    <AnimatePresence mode="popLayout">
-      <div className="fixed top-4 left-4 right-4 z-40 pointer-events-none">
-        <div className="flex flex-col gap-2 max-w-sm mx-auto">
-          {notifications.map((notif, idx) => {
-            const config = getNotifConfig(notif.type);
-
-            return (
-              <motion.div
-                key={notif.id}
-                layout
-                initial={{ opacity: 0, y: -20, scale: 0.95 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: -10, scale: 0.95 }}
-                transition={{
-                  duration: 0.3,
-                  delay: idx * 0.05,
-                  ease: "easeOut",
-                }}
-                onClick={() => handleNotificationClick(notif)}
-                className={`
-                  glass-card pointer-events-auto cursor-pointer
-                  bg-gradient-to-r ${config.bgColor}
-                  border ${config.borderColor}
-                  p-3.5 rounded-2xl
-                  flex items-start gap-3
-                  group hover:shadow-lg hover:shadow-current/20
-                  transition-all duration-200
-                  backdrop-blur-xl
-                  active:scale-95
-                `}
-              >
-                {/* Icon */}
-                <div className="mt-0.5 flex-shrink-0 text-white/90">
-                  {config.icon}
-                </div>
-
-                {/* Content */}
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-cairo font-bold text-white/95 leading-tight">
-                    {config.label}
-                  </p>
-                  <p className="text-xs text-white/75 mt-1 line-clamp-2 font-cairo">
-                    {notif.content}
-                  </p>
-                </div>
-
-                {/* Close button */}
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    dismissNotification(notif.id);
-                  }}
-                  className="flex-shrink-0 ml-2 p-1.5 rounded-lg hover:bg-white/20 transition-colors text-white/70 hover:text-white"
-                  aria-label="إغلاق"
-                >
-                  <X size={16} />
-                </button>
-              </motion.div>
-            );
-          })}
-        </div>
-      </div>
+    <AnimatePresence>
+      {preview && (
+        <motion.div
+          key={preview.msgId}
+          initial={{ y: -80, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          exit={{ y: -80, opacity: 0 }}
+          transition={{ type: "spring", stiffness: 380, damping: 30 }}
+          drag="y"
+          dragConstraints={{ top: -80, bottom: 0 }}
+          dragElastic={0.3}
+          onDragEnd={(_, info) => {
+            if (info.offset.y < -30) setPreview(null);
+          }}
+          className="fixed top-3 left-1/2 -translate-x-1/2 z-[60] w-[min(420px,calc(100vw-1.5rem))]"
+        >
+          <button
+            type="button"
+            onClick={handleOpen}
+            className="w-full text-right flex items-center gap-3 rounded-2xl px-3 py-2.5 border border-border/40 shadow-2xl"
+            style={{
+              background: "hsl(var(--background) / 0.92)",
+              backdropFilter: "blur(20px) saturate(1.4)",
+              WebkitBackdropFilter: "blur(20px) saturate(1.4)",
+              boxShadow: "0 12px 40px -8px hsl(0 0% 0% / 0.45)",
+            }}
+          >
+            <div className="shrink-0">
+              <UserAvatar
+                url={preview.senderAvatar || undefined}
+                name={preview.senderName}
+                size="sm"
+              />
+            </div>
+            <div className="flex-1 min-w-0 text-right">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-cairo font-bold text-[13px] text-foreground truncate">
+                  {preview.senderName}
+                </span>
+                <MessageCircle size={14} className="text-primary shrink-0" />
+              </div>
+              <div className="font-cairo text-[12px] text-muted-foreground truncate">
+                {preview.count > 1
+                  ? `${preview.count} رسائل جديدة`
+                  : preview.content || "رسالة جديدة"}
+              </div>
+            </div>
+          </button>
+        </motion.div>
+      )}
     </AnimatePresence>
   );
-};
-
-export default FloatingNotification;
+}

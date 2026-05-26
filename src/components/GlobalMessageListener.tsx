@@ -1,4 +1,5 @@
-// src/components/GlobalMessageListener.tsx — FIXED
+// src/components/GlobalMessageListener.tsx
+// Realtime listener — routes all chat messages through notificationRouter.
 
 import { useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
@@ -6,41 +7,53 @@ import { useAuth } from "@/hooks/useAuth";
 import { useSettings } from "@/hooks/useSettings";
 import { playNotificationSound, vibrate } from "@/lib/notificationSounds";
 import { useQueryClient } from "@tanstack/react-query";
-
-const CHAT_SELECT =
-  "id,user1_id,user2_id,last_message_at,last_message_content,last_message_sender_id,deleted_by,cleared_before," +
-  "user1:profiles!chats_user1_id_fkey(id,username,full_name,avatar_url,is_online,last_seen)," +
-  "user2:profiles!chats_user2_id_fkey(id,username,full_name,avatar_url,is_online,last_seen)";
-
-function isOnSameChat(chatId: string): boolean {
-  const path = window.location.pathname;
-
-  return (
-    path === `/chat/${chatId}` ||
-    path === `/chats/${chatId}` ||
-    path.startsWith(`/chat/${chatId}/`)
-  );
-}
+import { useActiveChat } from "@/contexts/ActiveChatContext";
+import { notificationRouter } from "@/lib/notificationRouter";
 
 const GlobalMessageListener = () => {
   const { user } = useAuth();
   const { settings } = useSettings();
   const qc = useQueryClient();
+  const { activeChatId, isAppActive } = useActiveChat();
 
   const settingsRef = useRef(settings);
   const qcRef = useRef(qc);
 
+  useEffect(() => { settingsRef.current = settings; }, [settings]);
+  useEffect(() => { qcRef.current = qc; }, [qc]);
+
+  // Keep the router state in sync with React state
   useEffect(() => {
-    settingsRef.current = settings;
+    notificationRouter.setActive(activeChatId, isAppActive);
+  }, [activeChatId, isAppActive]);
+  useEffect(() => {
+    const s: any = settings || {};
+    notificationRouter.setSettings({
+      soundEnabled: s.in_app_sound_enabled !== false,
+      vibrationEnabled: s.vibration_enabled !== false,
+      soundName: s.notification_sound || "default",
+      soundVolume: s.notification_volume ?? 80,
+    });
   }, [settings]);
 
+  // Listen for SW → client commands (mark-read action, push-suppressed tick)
   useEffect(() => {
-    qcRef.current = qc;
-  }, [qc]);
+    if (!user?.id || typeof navigator === "undefined" || !navigator.serviceWorker) return;
+    const handler = (evt: MessageEvent) => {
+      const data = evt.data;
+      if (!data) return;
+      if (data.type === "MARK_CHAT_READ" && data.chatId) {
+        void supabase.rpc("mark_chat_read", { p_chat_id: data.chatId, p_user_id: user.id });
+        qcRef.current.invalidateQueries({ queryKey: ["unread-counts", user.id] });
+      }
+    };
+    navigator.serviceWorker.addEventListener("message", handler);
+    return () => navigator.serviceWorker.removeEventListener("message", handler);
+  }, [user?.id]);
 
-  // ═════════════════════════════════════
-  // 1. CHAT MESSAGES
-  // ═════════════════════════════════════
+  // ═════════════════════════════════════════════════
+  // CHAT MESSAGES (routed through notificationRouter)
+  // ═════════════════════════════════════════════════
   useEffect(() => {
     if (!user?.id) return;
 
@@ -48,131 +61,81 @@ const GlobalMessageListener = () => {
       .channel(`chat-msgs-${user.id}`)
       .on(
         "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "chat_messages",
-        },
+        { event: "INSERT", schema: "public", table: "chat_messages" },
         async (payload: any) => {
           const msg = payload.new;
-
           if (!msg) return;
+          if (msg.sender_id === user.id) return; // ignore own
 
-          // ignore my own messages
-          if (msg.sender_id === user.id) return;
+          // Update chats list (last_message preview)
+          qcRef.current.setQueryData(["chats", user.id], (old: any[] = []) => {
+            const updated = old.map((c) =>
+              c.id === msg.chat_id
+                ? { ...c, last_message_at: msg.created_at, last_message_content: msg.content, last_message_sender_id: msg.sender_id }
+                : c
+            );
+            return updated.sort(
+              (a, b) => new Date(b.last_message_at || 0).getTime() - new Date(a.last_message_at || 0).getTime()
+            );
+          });
 
-          const onChat = isOnSameChat(msg.chat_id);
-          const s: any = settingsRef.current;
+          // Hydrate sender profile (small lookup; cached by RQ)
+          let senderName = "رسالة جديدة";
+          let senderAvatar: string | null = null;
+          try {
+            const { data: prof } = await supabase
+              .from("profiles")
+              .select("full_name,username,avatar_url")
+              .eq("id", msg.sender_id)
+              .maybeSingle();
+            senderName = prof?.full_name || prof?.username || senderName;
+            senderAvatar = prof?.avatar_url ?? null;
+          } catch {}
 
-          // 🔊 only outside same chat
-          if (!onChat) {
-            if (s?.in_app_sound_enabled !== false) {
-              playNotificationSound(
-                s?.notification_sound || "default",
-                s?.notification_volume ?? 80
-              );
-            }
+          // ── Route through the anti-spam brain ──
+          const result = notificationRouter.ingest({
+            id: msg.id,
+            chat_id: msg.chat_id,
+            sender_id: msg.sender_id,
+            content: msg.content || "",
+            created_at: msg.created_at,
+            sender_name: senderName,
+            sender_avatar: senderAvatar,
+          });
 
-            if (s?.vibration_enabled !== false) {
-              vibrate([60, 40, 60]);
-            }
-          }
-
-          // update chats list
-          qcRef.current.setQueryData(
-            ["chats", user.id],
-            (old: any[] = []) => {
-              let exists = false;
-
-              const updated = old.map((c) => {
-                if (c.id === msg.chat_id) {
-                  exists = true;
-
-                  return {
-                    ...c,
-                    last_message_at: msg.created_at,
-                    last_message_content: msg.content,
-                    last_message_sender_id: msg.sender_id,
-                  };
-                }
-
-                return c;
-              });
-
-              return updated.sort(
-                (a, b) =>
-                  new Date(b.last_message_at || 0).getTime() -
-                  new Date(a.last_message_at || 0).getTime()
-              );
-            }
-          );
-
-          // unread / read logic
-          if (onChat) {
+          if (result === "silent") {
+            // User is on this chat — mark read immediately, no sound
             try {
-              // ✅ STEP 1: Mark chat as read in DB (upsert chat_read_receipts)
-              await supabase.rpc("mark_chat_read", {
-                p_chat_id: msg.chat_id,
-                p_user_id: user.id,
-              });
-
-              // ✅ STEP 2: Update chat_messages table — mark old messages as read
-              const { error: updateError } = await supabase
-                .from("chat_messages")
+              await supabase.rpc("mark_chat_read", { p_chat_id: msg.chat_id, p_user_id: user.id });
+              await supabase.from("chat_messages")
                 .update({ status: "read" })
                 .eq("chat_id", msg.chat_id)
-                .neq("sender_id", user.id)  // Don't mark my own messages
-                .neq("status", "read");  // Only unread ones
-
-              if (updateError) {
-                console.warn("[read-receipt-db] UPDATE failed:", updateError.message);
-              }
-
-              // ✅ STEP 3: Update React Query data (optimistic — instant UI response)
+                .neq("sender_id", user.id)
+                .neq("status", "read");
               qcRef.current.setQueryData(
                 ["chat-messages", msg.chat_id, user.id],
-                (old: any[] = []) =>
-                  old.map((m) =>
-                    m.sender_id !== user.id
-                      ? {
-                          ...m,
-                          status: "read",
-                        }
-                      : m
-                  )
+                (old: any[] = []) => old.map((m) => m.sender_id !== user.id ? { ...m, status: "read" } : m)
               );
             } catch (err) {
-              console.error("[mark_chat_read] RPC failed", err);
+              console.warn("[silent mark_read]", (err as Error).message);
             }
           } else {
-            // ✅ STEP 1.5: Mark incoming message as "delivered" since user is online
+            // Not on this chat — mark as delivered, bump unread badge
             try {
-              const { error: deliveryError } = await supabase
-                .from("chat_messages")
+              await supabase.from("chat_messages")
                 .update({ status: "delivered" })
                 .eq("id", msg.id)
-                .eq("status", "sent"); // Only mark if currently 'sent'
-
-              if (deliveryError) {
-                console.warn("[delivery-receipt] UPDATE failed:", deliveryError.message);
-              }
-            } catch (err) {
-              console.error("[delivery-receipt] failed", err);
-            }
-
-            // User NOT on this chat — just invalidate unread counts
-            qcRef.current.invalidateQueries({
-              queryKey: ["unread-counts", user.id],
-            });
+                .eq("status", "sent");
+            } catch {}
+            qcRef.current.invalidateQueries({ queryKey: ["unread-counts", user.id] });
           }
         }
       )
       .subscribe();
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return () => { supabase.removeChannel(channel); };
   }, [user?.id]);
+
 
   // ═════════════════════════════════════
   // 2. NEW NOTIFICATIONS

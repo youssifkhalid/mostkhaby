@@ -5,7 +5,6 @@ import { useNotifications } from "@/hooks/useNotifications";
 import { useUnreadMessages } from "@/hooks/useUnreadMessages";
 import { forwardRef, useMemo, useCallback } from "react";
 
-// ترتيب صحيح: من اليمين لليسار (RTL) كما يفترض أن يكون
 const tabs = [
   { path: "/settings", icon: Settings, label: "الإعدادات" },
   { path: "/chats", icon: MessageCircle, label: "الشات" },
@@ -63,8 +62,13 @@ const BottomNav = forwardRef<HTMLElement>((_, ref) => {
           return (
             <motion.button
               key={tab.path}
+              type="button"
               whileTap={{ scale: 0.82 }}
-              onClick={() => handleNavigate(tab.path)}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleNavigate(tab.path);
+              }}
               className={`bottom-nav-item relative px-3 py-2 rounded-2xl`}
               aria-label={tab.label}
               aria-current={isActive ? "page" : undefined}
