@@ -205,10 +205,9 @@ CREATE TRIGGER on_chat_message_update_chat AFTER INSERT ON public.chat_messages
 -- Ensure realtime
 ALTER TABLE public.chat_messages REPLICA IDENTITY FULL;
 ALTER TABLE public.chat_reactions REPLICA IDENTITY FULL;
-DO $$
-BEGIN
-  ALTER PUBLICATION supabase_realtime ADD TABLE public.chat_reactions;
-EXCEPTION
-  WHEN duplicate_object THEN NULL;
-  WHEN others THEN NULL;
-END $$;
+
+DO $$ BEGIN
+  EXECUTE 'DO $mig$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.chat_reactions';
+EXCEPTION WHEN duplicate_object THEN NULL; END $mig$;
+EXCEPTION WHEN duplicate_object THEN NULL; WHEN others THEN NULL; END $$;
