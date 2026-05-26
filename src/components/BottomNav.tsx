@@ -6,11 +6,11 @@ import { useUnreadMessages } from "@/hooks/useUnreadMessages";
 import { forwardRef, useMemo, useCallback } from "react";
 
 const tabs = [
-  { path: "/settings", icon: Settings, label: "الإعدادات" },
-  { path: "/chats", icon: MessageCircle, label: "الشات" },
-  { path: "/", icon: Home, label: "الرئيسية" },
-  { path: "/notifications", icon: Bell, label: "الإشعارات" },
   { path: "/profile", icon: User, label: "حسابي" },
+  { path: "/notifications", icon: Bell, label: "الإشعارات" },
+  { path: "/", icon: Home, label: "الرئيسية" },
+  { path: "/chats", icon: MessageCircle, label: "الشات" },
+  { path: "/settings", icon: Settings, label: "الإعدادات" },
 ];
 
 const hiddenPaths = ["/auth"];
