@@ -227,8 +227,10 @@ export const useChatMessages = (chatId: string | undefined) => {
   useEffect(() => {
     if (!chatId || !user?.id) return;
 
+    // FIX: instanceId prevents duplicate channel name on re-mount (StrictMode / navigation)
+    const instanceId = Math.random().toString(36).substring(7);
     const ch = supabase
-      .channel(`chat-${chatId}`)
+      .channel(`chat-${chatId}-${instanceId}`)
       .on(
         "postgres_changes",
         {
@@ -251,11 +253,13 @@ export const useChatMessages = (chatId: string | undefined) => {
             (old: any[]) => {
               if (!old) return [incoming];
               if (old.some((m: any) => m.id === incoming.id)) return old;
+              // FIX: match temp by content + sender to avoid removing wrong messages
               const filtered = old.filter(
                 (m: any) =>
                   !(
                     String(m.id).startsWith("temp-") &&
-                    m.sender_id === incoming.sender_id
+                    m.sender_id === incoming.sender_id &&
+                    m.content === incoming.content
                   )
               );
               return [...filtered, incoming];
@@ -382,6 +386,20 @@ export const useChatMessages = (chatId: string | undefined) => {
         (old: any[]) => [...(old || []), optimistic]
       );
       return { tempId };
+    },
+    // FIX: onSuccess - update temp message status to "sent" so it shows immediately
+    // even if realtime is slow or delayed
+    onSuccess: (_data, vars, ctx) => {
+      if (!ctx?.tempId || !user?.id) return;
+      qc.setQueryData(
+        ["chat-messages", chatId, user?.id],
+        (old: any[]) =>
+          old?.map((m: any) =>
+            m.id === ctx.tempId
+              ? { ...m, status: "sent" }
+              : m
+          ) || []
+      );
     },
     onError: (_err, _vars, ctx) => {
       qc.setQueryData(
