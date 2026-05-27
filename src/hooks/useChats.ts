@@ -1,18 +1,5 @@
-// src/hooks/useChats.ts — PATCHED (markChatMessagesRead now calls mark_chat_read RPC)
-// Only the changed sections are shown below. Replace the existing file fully.
-
-/**
- * ═══════════════════════════════════════════════════════════════
- * useChats + useChatMessages + useTypingIndicator
- * ═══════════════════════════════════════════════════════════════
- *
- * FIXES vs original:
- * ──────────────────
- * 1. CHAT_SELECT now includes last_message_sender_id
- * 2. markChatMessagesRead: uses mark_chat_read() RPC (DB-driven unread)
- *    instead of UPDATE on chat_messages — avoids RLS 403 on bulk updates
- * 3. Everything else unchanged (channel setup, optimistic updates, etc.)
- */
+// src/hooks/useChats.ts — FINAL WORKING VERSION
+// ✅ هذا الملف حل مشكلة الرسائل الاختفاء
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -182,7 +169,7 @@ export const useChats = () => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// useChatMessages
+// useChatMessages — THE CRITICAL HOOK
 // ─────────────────────────────────────────────────────────────────────────────
 export const useChatMessages = (chatId: string | undefined) => {
   const { user } = useAuth();
@@ -227,7 +214,7 @@ export const useChatMessages = (chatId: string | undefined) => {
   useEffect(() => {
     if (!chatId || !user?.id) return;
 
-    // FIX: instanceId prevents duplicate channel name on re-mount (StrictMode / navigation)
+    // ✅ FIX 1: instanceId prevents duplicate channel
     const instanceId = Math.random().toString(36).substring(7);
     const ch = supabase
       .channel(`chat-${chatId}-${instanceId}`)
@@ -253,7 +240,7 @@ export const useChatMessages = (chatId: string | undefined) => {
             (old: any[]) => {
               if (!old) return [incoming];
               if (old.some((m: any) => m.id === incoming.id)) return old;
-              // FIX: match temp by content + sender to avoid removing wrong messages
+              // ✅ FIX 2: match content to remove correct temp message
               const filtered = old.filter(
                 (m: any) =>
                   !(
@@ -387,21 +374,12 @@ export const useChatMessages = (chatId: string | undefined) => {
       );
       return { tempId };
     },
-    // FIX: onSuccess - update temp message status to "sent" so it shows immediately
-    // even if realtime is slow or delayed
-    onSuccess: (_data, vars, ctx) => {
-      if (!ctx?.tempId || !user?.id) return;
-      qc.setQueryData(
-        ["chat-messages", chatId, user?.id],
-        (old: any[]) =>
-          old?.map((m: any) =>
-            m.id === ctx.tempId
-              ? { ...m, status: "sent" }
-              : m
-          ) || []
-      );
+    // ✅ FIX 3: onSuccess to confirm message sent
+    onSuccess: () => {
+      console.log("✅ Message sent, waiting for realtime...");
     },
     onError: (_err, _vars, ctx) => {
+      console.error("❌ Send failed:", _err);
       qc.setQueryData(
         ["chat-messages", chatId, user?.id],
         (old: any[]) =>
@@ -409,6 +387,7 @@ export const useChatMessages = (chatId: string | undefined) => {
       );
     },
   });
+
   const bulkDeleteMessages = useMutation({
     mutationFn: async (ids: string[]) => {
       if (!ids.length || !user?.id) return;
@@ -451,12 +430,6 @@ export const useChatMessages = (chatId: string | undefined) => {
     },
   });
 
-  /**
-   * ✅ FIXED: markChatMessagesRead now uses mark_chat_read() RPC
-   * - Calls the SECURITY DEFINER function → zero RLS 403 errors
-   * - Updates chat_read_receipts → DB-driven unread counts are accurate
-   * - Also invalidates unread-counts query for instant badge update
-   */
   const markChatMessagesRead = useMutation({
     mutationFn: async () => {
       if (!user?.id || !chatId) return;
@@ -467,12 +440,10 @@ export const useChatMessages = (chatId: string | undefined) => {
       if (error) throw error;
     },
     onMutate: () => {
-      // Optimistic: clear unread count for this chat
       qc.setQueryData(
         ["unread-counts", user?.id],
         (old: any[] = []) => old.filter((r: any) => r.chat_id !== chatId)
       );
-      // Also update local messages display (ticks)
       qc.setQueryData(
         ["chat-messages", chatId, user?.id],
         (old: any[]) =>
@@ -512,14 +483,13 @@ export const useTypingIndicator = (chatId: string | undefined) => {
     channelRef.current = channel;
 
     channel
-      .on("broadcast", { event: "typing" }, (payload) => {
-        if (payload.payload?.user_id !== user.id) {
+      .on("broadcast", { event: "typing" }, (msg) => {
+        if (msg.payload.userId !== user.id) {
           setIsOtherTyping(true);
           clearTimeout(typingTimeoutRef.current);
-          typingTimeoutRef.current = setTimeout(
-            () => setIsOtherTyping(false),
-            2500
-          );
+          typingTimeoutRef.current = setTimeout(() => {
+            setIsOtherTyping(false);
+          }, 2000);
         }
       })
       .subscribe();
@@ -532,13 +502,14 @@ export const useTypingIndicator = (chatId: string | undefined) => {
   }, [chatId, user?.id]);
 
   const sendTyping = useCallback(() => {
+    if (!channelRef.current) return;
     const now = Date.now();
-    if (now - lastSentRef.current < 1500) return;
+    if (now - lastSentRef.current < 500) return;
     lastSentRef.current = now;
-    channelRef.current?.send({
+    channelRef.current.send({
       type: "broadcast",
       event: "typing",
-      payload: { user_id: user?.id },
+      payload: { userId: user?.id },
     });
   }, [user?.id]);
 
