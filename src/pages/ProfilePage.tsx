@@ -1,10 +1,10 @@
 import { motion, AnimatePresence } from "framer-motion";
-import { Copy, Share2, Mail, MessageSquare, Loader2, Camera, Heart, Eye, QrCode, ArrowRight, Star, Send as SendIcon, Search, Inbox, Reply, Users } from "lucide-react";
+import { Copy, Mail, MessageSquare, Loader2, Camera, Heart, Eye, QrCode, ArrowRight, Star, Send as SendIcon, Search, Inbox, Reply, Users } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import TopBar from "@/components/TopBar";
 import MessageCard from "@/components/MessageCard";
-import AccountSwitcher from "@/components/AccountSwitcher";
+
 import { useProfile } from "@/hooks/useProfile";
 import { useMessages } from "@/hooks/useMessages";
 import { useAuth } from "@/hooks/useAuth";
@@ -14,6 +14,7 @@ import { useReplies } from "@/hooks/useReplies";
 import { supabase } from "@/integrations/supabase/client";
 import QRCodeCard from "@/components/QRCodeCard";
 import UserAvatar from "@/components/UserAvatar";
+import AccountSwitcher from "@/components/AccountSwitcher";
 import { useNavigate } from "react-router-dom";
 import { formatDistanceToNow } from "date-fns";
 import { ar } from "date-fns/locale";
@@ -31,7 +32,7 @@ const sentSubTabs = [
 
 const ProfilePage = () => {
   const { profile, isLoading, updateProfile } = useProfile();
-  const { messages, sentMessages, isLoading: messagesLoading, toggleFavorite, deleteMessage, togglePublic } = useMessages();
+  const { messages, sentMessages, isLoading: messagesLoading, toggleFavorite, deleteMessage } = useMessages();
   const { user } = useAuth();
   const { visitCount } = useProfileVisits();
   const { followers, following } = useFollows();
@@ -100,12 +101,6 @@ const ProfilePage = () => {
     updateProfile.mutate({ avatar_url: publicUrl }, { onSuccess: () => toast.success("تم تحديث الصورة! 📸") });
   };
 
-  const handleShare = async () => {
-    if (navigator.share) {
-      await navigator.share({ title: "مستخبي", text: "ابعتلي رسالة سرية!", url: link });
-    } else handleCopy();
-  };
-
   const handleToggleFavorite = (id: string, current: boolean) => {
     toggleFavorite.mutate({ id, is_favorite: !current });
   };
@@ -150,54 +145,83 @@ const ProfilePage = () => {
   };
 
   return (
-    <div className="min-h-screen pb-24">
+    <div className="min-h-screen pb-24 relative">
       <TopBar />
-      <div className="max-w-lg mx-auto px-4 py-6 space-y-5">
 
-        {/* ───── Avatar with animated ring ───── */}
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-center text-center">
-          <div className="relative mb-6">
-            {/* Spinning colorful glow ring */}
-            <div className="avatar-orbit-glow animate-ultra-spin opacity-85" />
-            
-            {/* Inner secondary ring for extra premium depth */}
-            <div className="absolute -inset-1 rounded-full border-2 border-dashed border-background/40 z-[5] pointer-events-none" />
-            
-            <div className="relative z-10">
-              <UserAvatar
-                url={profile?.avatar_url}
-                name={profile?.full_name || profile?.username}
-                size="xl"
-                isOnline={true}
-                className="border-4 border-background shadow-2xl relative z-10"
-              />
-              
-              {/* Floating Camera Upload Trigger with Glassmorphism */}
-              <label className="absolute -bottom-1 -left-1 w-9 h-9 rounded-full bg-accent text-accent-foreground flex items-center justify-center cursor-pointer shadow-xl z-20 border-2 border-background hover:scale-110 active:scale-95 transition-all">
-                <Camera size={14} />
-                <input type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
-              </label>
+      <div className="max-w-lg mx-auto px-4 py-6 space-y-5 relative z-10">
+
+        {/* ───── Unified Profile Hero Card ───── */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="glass-card p-5 rounded-3xl border border-border/20 shadow-xl"
+        >
+          <div className="flex items-start gap-4">
+            {/* Avatar with camera CTA */}
+            <div className="relative flex-shrink-0">
+              <div className="relative z-10">
+                <UserAvatar
+                  url={profile?.avatar_url}
+                  name={profile?.full_name || profile?.username}
+                  size="lg"
+                  isOnline={true}
+                  className="border-2 border-background shadow-lg"
+                />
+                <label className="absolute -bottom-1 -left-1 w-7 h-7 rounded-full bg-accent text-accent-foreground flex items-center justify-center cursor-pointer shadow-lg z-20 border-2 border-background hover:scale-110 active:scale-95 transition-all">
+                  <Camera size={12} />
+                  <input type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
+                </label>
+              </div>
+            </div>
+
+            {/* Name + meta + inline follower stats */}
+            <div className="flex-1 min-w-0 text-right">
+              <div className="flex items-start justify-between gap-2">
+                <AccountSwitcher variant="icon" />
+                <div className="min-w-0 flex-1">
+                  <h1 className="text-lg font-cairo font-extrabold text-foreground truncate leading-tight">
+                    {profile?.full_name || profile?.username}
+                  </h1>
+                  <p className="text-xs text-muted-foreground font-mono truncate" dir="ltr">
+                    @{profile?.username}
+                  </p>
+                </div>
+              </div>
+
+              {/* Inline stats row */}
+              <div className="flex items-center gap-3 mt-2.5">
+                <motion.button
+                  whileTap={{ scale: 0.95 }}
+                  onClick={() => { setShowFollowers(!showFollowers); setShowFollowing(false); }}
+                  className="flex items-baseline gap-1"
+                >
+                  <span className="text-sm font-cairo font-extrabold text-foreground">{acceptedFollowers.length}</span>
+                  <span className="text-[11px] text-muted-foreground font-cairo">متابع</span>
+                </motion.button>
+                <span className="w-1 h-1 rounded-full bg-border/50" />
+                <motion.button
+                  whileTap={{ scale: 0.95 }}
+                  onClick={() => { setShowFollowing(!showFollowing); setShowFollowers(false); }}
+                  className="flex items-baseline gap-1"
+                >
+                  <span className="text-sm font-cairo font-extrabold text-foreground">{acceptedFollowing.length}</span>
+                  <span className="text-[11px] text-muted-foreground font-cairo">يتابع</span>
+                </motion.button>
+                <span className="w-1 h-1 rounded-full bg-border/50" />
+                <div className="flex items-baseline gap-1">
+                  <span className="text-sm font-cairo font-extrabold text-foreground">{visitCount}</span>
+                  <span className="text-[11px] text-muted-foreground font-cairo">زيارة</span>
+                </div>
+              </div>
             </div>
           </div>
 
-          {/* Account Switcher */}
-          <AccountSwitcher />
-          <h1 className="text-xl font-cairo font-bold text-foreground mt-2">{profile?.full_name || profile?.username}</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">@{profile?.username}</p>
-          <p className="text-sm text-muted-foreground mt-1 max-w-xs">{profile?.bio}</p>
-        </motion.div>
-
-        {/* Followers/Following */}
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }} className="flex justify-center gap-6">
-          <motion.button whileTap={{ scale: 0.95 }} onClick={() => { setShowFollowers(!showFollowers); setShowFollowing(false); }} className="flex flex-col items-center gap-0.5">
-            <span className="text-xl font-cairo font-bold text-foreground">{acceptedFollowers.length}</span>
-            <span className="text-xs text-muted-foreground font-cairo">متابعين</span>
-          </motion.button>
-          <div className="w-px bg-border/30" />
-          <motion.button whileTap={{ scale: 0.95 }} onClick={() => { setShowFollowing(!showFollowing); setShowFollowers(false); }} className="flex flex-col items-center gap-0.5">
-            <span className="text-xl font-cairo font-bold text-foreground">{acceptedFollowing.length}</span>
-            <span className="text-xs text-muted-foreground font-cairo">بيتابع</span>
-          </motion.button>
+          {/* Bio (full width, below) */}
+          {profile?.bio && (
+            <p className="text-sm text-foreground/85 font-cairo mt-4 leading-relaxed text-right border-t border-border/15 pt-3">
+              {profile.bio}
+            </p>
+          )}
         </motion.div>
 
         {/* Followers/Following Lists */}
@@ -281,9 +305,6 @@ const ProfilePage = () => {
             </div>
           </div>
           <div className="flex gap-2">
-            <motion.button whileTap={{ scale: 0.97 }} onClick={handleShare} className="flex-1 btn-accent flex items-center justify-center gap-2 font-cairo text-sm">
-              <Share2 size={16} /> مشاركة
-            </motion.button>
             <motion.button whileTap={{ scale: 0.97 }} onClick={() => setShowQR(!showQR)} className="flex-1 glass-card flex items-center justify-center gap-2 font-cairo text-sm font-semibold text-foreground hover:border-primary/30 transition-colors py-3">
               <QrCode size={16} className="text-primary" /> QR Code
             </motion.button>
@@ -385,9 +406,8 @@ const ProfilePage = () => {
                           onToggleFavorite={handleToggleFavorite}
                           onDelete={handleDelete}
                           onReply={activeTab !== "sent" ? (id) => { setReplyingTo(replyingTo === id ? null : id); setReplyContent(""); } : undefined}
-                          onTogglePublic={activeTab !== "sent" ? (id, current) => togglePublic.mutate({ id, is_public: !current }) : undefined}
                           showReply={activeTab !== "sent"}
-                          showPublicToggle={activeTab !== "sent"}
+                          showPublicToggle={false}
                         />
 
                         {/* Show existing replies under the message */}

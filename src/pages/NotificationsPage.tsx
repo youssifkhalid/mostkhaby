@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowRight, Bell, Loader2, CheckCheck, UserPlus, MessageSquare, Heart, Users, Trash2, Volume2 } from "lucide-react";
+import { ArrowRight, Bell, Loader2, CheckCheck, UserPlus, MessageSquare, Heart, Users, Trash2, Volume2, Check } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useNotifications } from "@/hooks/useNotifications";
 import { format, formatDistanceToNow } from "date-fns";
@@ -32,6 +32,7 @@ const NotificationsPage = () => {
   const { settings } = useSettings();
   const qc = useQueryClient();
   const [filter, setFilter] = useState("all");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const filtered = useMemo(() => {
     if (filter === "all") return notifications;
@@ -48,8 +49,21 @@ const NotificationsPage = () => {
   const clearAll = async () => {
     if (!user) return;
     if (!confirm("متأكد إنك عايز تمسح كل الإشعارات؟")) return;
-    // notifications table has no DELETE policy — fall back to mark read
-    await markAllRead();
+    const { error } = await supabase.from("notifications").delete().eq("user_id", user.id);
+    if (error) { toast.error("فشل الحذف"); return; }
+    qc.setQueryData(["notifications", user.id], []);
+    setSelectedIds(new Set());
+    toast.success("اتمسحت كل الإشعارات 🗑️");
+  };
+
+  const deleteSelected = async () => {
+    if (!user || selectedIds.size === 0) return;
+    const ids = Array.from(selectedIds);
+    const { error } = await supabase.from("notifications").delete().eq("user_id", user.id).in("id", ids);
+    if (error) { toast.error("فشل حذف المحدد"); return; }
+    qc.setQueryData(["notifications", user.id], (old: any[]) => old?.filter((n: any) => !selectedIds.has(n.id)) || []);
+    setSelectedIds(new Set());
+    toast.success("تم حذف المحدد 🗑️");
   };
 
   const testSound = () => {
@@ -60,6 +74,14 @@ const NotificationsPage = () => {
   const unreadCount = notifications.filter((n: any) => !n.is_read).length;
 
   const handleClick = (n: any) => {
+    if (selectedIds.size > 0) {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        next.has(n.id) ? next.delete(n.id) : next.add(n.id);
+        return next;
+      });
+      return;
+    }
     if (!n.is_read) markAsRead.mutate(n.id);
     if (n.type === "message") navigate("/chats");
     else if (n.type === "follow") navigate("/notifications");
@@ -76,6 +98,16 @@ const NotificationsPage = () => {
             {unreadCount > 0 && (
               <motion.button whileTap={{ scale: 0.95 }} onClick={markAllRead} className="flex items-center gap-1 text-xs text-primary font-cairo font-semibold px-2">
                 <CheckCheck size={14} /> قراءة الكل
+              </motion.button>
+            )}
+            {selectedIds.size > 0 && (
+              <motion.button whileTap={{ scale: 0.95 }} onClick={deleteSelected} className="flex items-center gap-1 text-xs text-destructive font-cairo font-semibold px-2">
+                <Trash2 size={14} /> حذف {selectedIds.size}
+              </motion.button>
+            )}
+            {notifications.length > 0 && (
+              <motion.button whileTap={{ scale: 0.95 }} onClick={clearAll} className="p-2 rounded-xl hover:bg-destructive/10 text-destructive transition-colors" title="مسح الكل">
+                <Trash2 size={16} />
               </motion.button>
             )}
           </div>
@@ -134,8 +166,23 @@ const NotificationsPage = () => {
                   exit={{ opacity: 0, x: -100 }}
                   transition={{ delay: Math.min(i * 0.02, 0.3) }}
                   onClick={() => handleClick(notif)}
-                  className={`glass-card p-4 flex items-start gap-3 cursor-pointer transition-all hover:bg-secondary/20 ${!notif.is_read ? "border-primary/30 bg-primary/5 shadow-[0_2px_12px_hsl(var(--primary)/0.1)]" : ""}`}
+                  className={`glass-card p-4 flex items-start gap-3 cursor-pointer transition-all hover:bg-secondary/20 ${!notif.is_read ? "border-primary/30 bg-primary/5 shadow-[0_2px_12px_hsl(var(--primary)/0.1)]" : ""} ${selectedIds.has(notif.id) ? "ring-2 ring-primary/50" : ""}`}
                 >
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedIds((prev) => {
+                        const next = new Set(prev);
+                        next.has(notif.id) ? next.delete(notif.id) : next.add(notif.id);
+                        return next;
+                      });
+                    }}
+                    className={`mt-2 h-6 w-6 rounded-full border flex items-center justify-center flex-shrink-0 ${selectedIds.has(notif.id) ? "bg-primary border-primary text-primary-foreground" : "border-border/50 text-muted-foreground"}`}
+                    aria-label="تحديد الإشعار"
+                  >
+                    {selectedIds.has(notif.id) && <Check size={13} />}
+                  </button>
                   <div className={`w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 ${!notif.is_read ? iconInfo.bg : "bg-secondary"}`}>
                     <IconComp size={18} className={!notif.is_read ? iconInfo.color : "text-muted-foreground"} />
                   </div>

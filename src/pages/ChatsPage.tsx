@@ -2,7 +2,7 @@ import { motion, AnimatePresence, useMotionValue, useTransform } from "framer-mo
 import {
   Loader2, MessageCircle, Users, UserPlus, Search, Ban, Trash2,
   CheckCheck, Clock, Sparkles, ChevronRight, Bell, BellOff,
-  Pin, X, Check, TrendingUp, Activity, Zap, Heart
+  Pin, X, Check, TrendingUp, Activity, Zap, Heart, Plus
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useChats } from "@/hooks/useChats";
@@ -243,7 +243,7 @@ const ChatsPage = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [pinnedIds, setPinnedIds] = useState<Set<string>>(new Set());
   const [mutedIds, setMutedIds] = useState<Set<string>>(new Set());
-  const [filter, setFilter] = useState<"all" | "online" | "unread">("all");
+  const [filter, setFilter] = useState<"all" | "online" | "offline" | "unread">("all");
   const qc = useQueryClient();
   const { nicknames } = useNicknames();
 
@@ -313,6 +313,7 @@ const ChatsPage = () => {
         if (!other?.full_name?.includes(searchQuery) && !other?.username?.includes(searchQuery)) return false;
       }
       if (filter === "online") return getOtherUser(chat)?.is_online;
+      if (filter === "offline") return !getOtherUser(chat)?.is_online;
       if (filter === "unread") return (unreadPerChat.get(chat.id) || 0) > 0;
       return true;
     });
@@ -426,7 +427,7 @@ const ChatsPage = () => {
           )}
         </div>
         <div className="flex gap-1.5 p-1 bg-secondary/20 rounded-xl border border-border/10">
-          {(["all", "online", "unread"] as const).map((f) => {
+          {(["all", "online", "offline", "unread"] as const).map((f) => {
             const isActive = filter === f;
             return (
               <motion.button
@@ -439,7 +440,7 @@ const ChatsPage = () => {
                     : "text-muted-foreground hover:text-foreground hover:bg-secondary/40"
                 }`}
               >
-                {f === "all" ? "الكل" : f === "online" ? "🟢 متصل" : `🔴 غير مقروء`}
+                {f === "all" ? "الكل" : f === "online" ? "🟢 متصل" : f === "offline" ? "⚪ غير متصل" : `🔴 غير مقروء`}
                 {f === "unread" && totalUnread > 0 && (
                   <span className={`inline-block px-1 rounded bg-rose-600 text-white font-extrabold text-[8px]`}>
                     {totalUnread}
@@ -457,13 +458,28 @@ const ChatsPage = () => {
                   <p className="text-sm text-muted-foreground font-cairo">جاري التحميل...</p>
                 </div>
               ) : filteredChats.length > 0 ? (
-                <div className="space-y-2">
-                  {pinnedIds.size > 0 && filteredChats.some((c: any) => pinnedIds.has(c.id)) && (
-                    <p className="text-[10px] text-muted-foreground/60 font-cairo text-right flex items-center justify-end gap-1">
-                      <Pin size={9} className="rotate-45" /> مثبتة
-                    </p>
-                  )}
-                  {filteredChats.map((chat: any) => {
+                (() => {
+                  const pinned = filteredChats.filter((c: any) => pinnedIds.has(c.id));
+                  const rest = filteredChats.filter((c: any) => !pinnedIds.has(c.id));
+                  const groupByDate = (list: any[]) => {
+                    const groups: Record<string, any[]> = { today: [], yesterday: [], week: [], older: [] };
+                    const now = Date.now();
+                    list.forEach((c) => {
+                      const t = c.last_message_at ? new Date(c.last_message_at).getTime() : 0;
+                      const diff = now - t;
+                      const d = new Date(t).toDateString();
+                      const today = new Date().toDateString();
+                      const yest = new Date(Date.now() - 86400000).toDateString();
+                      if (d === today) groups.today.push(c);
+                      else if (d === yest) groups.yesterday.push(c);
+                      else if (diff < 7 * 86400000) groups.week.push(c);
+                      else groups.older.push(c);
+                    });
+                    return groups;
+                  };
+                  const groups = groupByDate(rest);
+                  const labels: Record<string, string> = { today: "اليوم", yesterday: "أمس", week: "هذا الأسبوع", older: "أقدم" };
+                  const renderRow = (chat: any) => {
                     const other = getOtherUser(chat);
                     const otherId = getOtherUserId(chat);
                     const displayName = (otherId && nicknames[otherId]) || other?.full_name || other?.username;
@@ -477,8 +493,28 @@ const ChatsPage = () => {
                         pinnedIds={pinnedIds} mutedIds={mutedIds}
                       />
                     );
-                  })}
-                </div>
+                  };
+                  return (
+                    <div className="space-y-3">
+                      {pinned.length > 0 && (
+                        <div className="space-y-2">
+                          <p className="text-[10px] text-muted-foreground/70 font-cairo text-right flex items-center justify-end gap-1">
+                            <Pin size={9} className="rotate-45 text-amber-500" /> مثبتة
+                          </p>
+                          {pinned.map(renderRow)}
+                        </div>
+                      )}
+                      {(["today", "yesterday", "week", "older"] as const).map((k) => (
+                        groups[k].length > 0 && (
+                          <div key={k} className="space-y-2">
+                            <p className="text-[10px] text-muted-foreground/70 font-cairo text-right">{labels[k]}</p>
+                            {groups[k].map(renderRow)}
+                          </div>
+                        )
+                      ))}
+                    </div>
+                  );
+                })()
               ) : (
                 <EmptyState
                   icon={MessageCircle}
@@ -581,6 +617,20 @@ const ChatsPage = () => {
           )}
         </AnimatePresence>
       </div>
+
+      {/* ─── New Chat FAB ─── */}
+      <motion.button
+        initial={{ scale: 0, rotate: -180 }}
+        animate={{ scale: 1, rotate: 0 }}
+        transition={{ type: "spring", stiffness: 380, damping: 24, delay: 0.15 }}
+        whileTap={{ scale: 0.88 }}
+        whileHover={{ scale: 1.06, rotate: 90 }}
+        onClick={() => setActiveTab("friends")}
+        aria-label="محادثة جديدة"
+        className="fixed bottom-24 left-5 z-40 w-14 h-14 rounded-2xl gradient-primary text-primary-foreground flex items-center justify-center shadow-[0_8px_28px_hsl(var(--primary)/0.5)] border border-white/15"
+      >
+        <Plus size={24} strokeWidth={2.5} />
+      </motion.button>
     </div>
   );
 };

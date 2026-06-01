@@ -1,6 +1,6 @@
 
 import { motion, AnimatePresence, useMotionValue, useTransform, animate } from "framer-motion";
-import { useState, useRef, useEffect, useCallback, memo } from "react";
+import { useState, useRef, useEffect, useCallback, memo, useMemo } from "react";
 import {
   ArrowRight, Send, Loader2, MoreVertical, Ban, Trash2, Flag, User, X,
   Check, Phone, Video, Mic, Image as ImageIcon, Eraser, CheckSquare,
@@ -17,6 +17,7 @@ import { useMediaUpload } from "@/hooks/useMediaUpload";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useBlockedUsers } from "@/hooks/useBlockedUsers";
+import { sanitizeTextForDatabase } from "@/lib/sanitizeText";
 import { formatDistanceToNow, format } from "date-fns";
 import { ar } from "date-fns/locale";
 import { toast } from "sonner";
@@ -44,6 +45,14 @@ interface Msg {
 /* ─── Helpers ─── */
 const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 const QUICK_EMOJIS = ["❤️", "😂", "😮", "😢", "👍", "🔥"];
+const EMOJI_CATEGORIES: { name: string; emojis: string[] }[] = [
+  { name: "وجوه", emojis: "😀 😃 😄 😁 😆 😅 🤣 😂 🙂 🙃 😉 😊 😇 🥰 😍 🤩 😘 😗 😚 😙 🥲 😋 😛 😜 🤪 😝 🤑 🤗 🤭 🤫 🤔 🤐 🤨 😐 😑 😶 😏 😒 🙄 😬 🤥 😌 😔 😪 🤤 😴 😷 🤒 🤕 🤢 🤮 🥵 🥶 🥴 😵 🤯 🤠 🥳 😎 🤓 🧐 😕 😟 🙁 ☹️ 😮 😯 😲 😳 🥺 😦 😧 😨 😰 😥 😢 😭 😱 😖 😣 😞 😓 😩 😫 😤 😡 😠 🤬 😈 👿 💀 💩 🤡".split(" ") },
+  { name: "قلوب", emojis: "❤️ 🧡 💛 💚 💙 💜 🖤 🤍 🤎 💔 ❣️ 💕 💞 💓 💗 💖 💘 💝 💟 ♥️ 💌 💋 🌹 💐".split(" ") },
+  { name: "إيدين", emojis: "👍 👎 👌 ✌️ 🤞 🤟 🤘 🤙 👈 👉 👆 👇 ☝️ ✋ 🤚 🖐️ 🖖 👋 🤛 🤜 ✊ 👊 👏 🙌 👐 🤲 🤝 🙏 💪 🦾 ✍️".split(" ") },
+  { name: "حيوانات", emojis: "🐶 🐱 🐭 🐹 🐰 🦊 🐻 🐼 🐨 🐯 🦁 🐮 🐷 🐸 🐵 🐔 🐧 🐦 🐤 🦅 🦉 🐺 🦄 🐝 🦋 🐌 🐞 🐢 🐍 🦎 🐙 🦑 🦞 🦀 🐠 🐟 🐬 🐳 🐋 🦈".split(" ") },
+  { name: "طعام", emojis: "🍎 🍐 🍊 🍋 🍌 🍉 🍇 🍓 🫐 🍈 🍒 🍑 🥭 🍍 🥥 🥝 🍅 🍆 🥑 🥦 🥬 🥒 🌶️ 🫑 🌽 🥕 🍞 🥐 🧀 🍗 🍕 🍔 🌭 🥪 🍟 🍿 🍩 🍪 🎂 🍰 🍫 🍬 🍭".split(" ") },
+  { name: "رموز", emojis: "✅ ❌ ⭐ 🌟 ✨ 💥 💢 💯 ‼️ ⁉️ ❓ ❗ 〰️ 🔥 💧 💨 🎉 🎊 🎁 🏆 🥇 🎵 🎶 🔔 ⚡ ☀️ 🌙 ⭐ 🌈 ☁️ 🌧️ ❄️".split(" ") },
+];
 
 function groupMessages(msgs: Msg[]) {
   const groups: { date: string; msgs: Msg[] }[] = [];
@@ -202,18 +211,21 @@ const SwipeReply = memo(({ children, onReply, isOwn }: {
 /* ─── Message Bubble ─── */
 const Bubble = memo(({
   msg, isMine, prevSameSender, replyMsg, reactions, selected, selectionMode,
-  onLongPress, onReply, onReact, onImageOpen, onClick
+  onLongPress, onReply, onReact, onImageOpen, onClick, onJumpToReply
 }: {
   msg: Msg; isMine: boolean; prevSameSender: boolean;
   replyMsg?: Msg | null; reactions?: { emoji: string; count: number; mine: boolean }[];
   selected?: boolean; selectionMode?: boolean;
   onLongPress: () => void; onReply: () => void; onReact: (e: string) => void;
   onImageOpen: (url: string) => void; onClick: () => void;
+  onJumpToReply?: (id: string) => void;
 }) => {
   const pressTimer = useRef<ReturnType<typeof setTimeout>>();
+  const pressStart = useRef<{ x: number; y: number } | null>(null);
   const [pressing, setPressing] = useState(false);
 
-  const startPress = useCallback(() => {
+  const startPress = useCallback((e: React.PointerEvent) => {
+    pressStart.current = { x: e.clientX, y: e.clientY };
     setPressing(true);
     pressTimer.current = setTimeout(() => {
       try { navigator.vibrate(15); } catch (e) { /* ignore vibration errors */ }
@@ -224,8 +236,16 @@ const Bubble = memo(({
 
   const endPress = useCallback(() => {
     clearTimeout(pressTimer.current);
+    pressStart.current = null;
     setPressing(false);
   }, []);
+
+  const movePress = useCallback((e: React.PointerEvent) => {
+    if (!pressStart.current) return;
+    const dx = Math.abs(e.clientX - pressStart.current.x);
+    const dy = Math.abs(e.clientY - pressStart.current.y);
+    if (dx > 10 || dy > 10) endPress();
+  }, [endPress]);
 
   const time = format(new Date(msg.created_at), "h:mm a", { locale: ar });
   const tail = isMine ? "rounded-br-sm" : "rounded-bl-sm";
@@ -236,7 +256,7 @@ const Bubble = memo(({
   return (
     <div className={`flex ${isMine ? "justify-start" : "justify-end"} ${!prevSameSender ? "mt-3" : "mt-0.5"} px-3
       ${selected ? "bg-primary/10 -mx-3 px-6 py-0.5 rounded-lg" : ""}`}
-      onClick={selectionMode ? onClick : undefined}>
+      onClick={() => { if (selectionMode) onClick(); }}>
 
       {selectionMode && (
         <div className={`flex items-center ${isMine ? "ml-2" : "mr-2"} flex-shrink-0`}>
@@ -249,8 +269,9 @@ const Bubble = memo(({
 
       <SwipeReply onReply={onReply} isOwn={isMine}>
         <div
+          data-msg-id={msg.id}
           style={{ transform: pressing ? "scale(0.97)" : "scale(1)", transition: "transform 0.15s ease" }}
-          onPointerDown={startPress} onPointerUp={endPress}
+          onPointerDown={startPress} onPointerMove={movePress} onPointerUp={endPress}
           onPointerLeave={endPress} onPointerCancel={endPress}
           onContextMenu={(e) => { e.preventDefault(); onLongPress(); }}
           className={`relative max-w-[78vw] md:max-w-[420px] rounded-2xl ${tail} ${bubble}
@@ -260,11 +281,15 @@ const Bubble = memo(({
 
           {/* Reply preview */}
           {replyMsg && !msg.is_deleted && (
-            <div className={`flex items-start gap-1.5 mb-2 rounded-lg px-2 py-1.5 border-r-2 ${isMine ? "bg-primary-foreground/10 border-primary-foreground/60 text-primary-foreground" : "bg-secondary/40 border-primary text-foreground"}`}>
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onJumpToReply?.(replyMsg.id); }}
+              className={`w-full text-right flex items-start gap-1.5 mb-2 rounded-lg px-2 py-1.5 border-r-2 transition-colors hover:opacity-80 ${isMine ? "bg-primary-foreground/10 border-primary-foreground/60 text-primary-foreground" : "bg-secondary/40 border-primary text-foreground"}`}
+            >
               {replyMsg.media_type === "image" && replyMsg.media_url && (
                 <img src={replyMsg.media_url} className="w-8 h-8 rounded object-cover flex-shrink-0" alt="" />
               )}
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <p className={`text-[10px] font-bold mb-0.5 ${isMine ? "text-primary-foreground" : "text-primary"}`}>
                   {replyMsg.sender_id === msg.sender_id ? "أنت" : replyMsg.sender?.full_name || replyMsg.sender?.username || "مستخدم"}
                 </p>
@@ -275,7 +300,7 @@ const Bubble = memo(({
                     replyMsg.content}
                 </p>
               </div>
-            </div>
+            </button>
           )}
 
           {/* Content */}
@@ -325,10 +350,11 @@ const Bubble = memo(({
 });
 
 /* ─── Reactions + Actions Sheet ─── */
-const MessageActionsSheet = memo(({ msg, isMine, onClose, onReply, onReact, onEdit, onDelete, onCopy }: {
-  msg: Msg; isMine: boolean;
+const MessageActionsSheet = memo(({ msg, isMine, isStarred, onClose, onReply, onReact, onEdit, onDelete, onCopy, onForward, onStar }: {
+  msg: Msg; isMine: boolean; isStarred: boolean;
   onClose: () => void; onReply: () => void; onReact: (e: string) => void;
   onEdit?: () => void; onDelete?: () => void; onCopy?: () => void;
+  onForward?: () => void; onStar?: () => void;
 }) => {
   useEffect(() => {
     const fn = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -339,6 +365,8 @@ const MessageActionsSheet = memo(({ msg, isMine, onClose, onReply, onReact, onEd
   const actions = [
     { icon: Reply, label: "رد", action: () => { onReply(); onClose(); }, color: "text-primary" },
     msg.media_type === "text" || !msg.media_type ? { icon: Copy, label: "نسخ", action: () => { onCopy?.(); onClose(); }, color: "text-foreground" } : null,
+    { icon: Forward, label: "إعادة توجيه", action: () => { onForward?.(); onClose(); }, color: "text-accent" },
+    { icon: Pin, label: isStarred ? "إلغاء التمييز" : "تمييز ⭐", action: () => { onStar?.(); onClose(); }, color: isStarred ? "text-amber-400" : "text-foreground" },
     isMine && !msg.is_deleted ? { icon: Edit3, label: "تعديل", action: () => { onEdit?.(); onClose(); }, color: "text-accent" } : null,
     isMine && !msg.is_deleted ? { icon: Trash2, label: "حذف", action: () => { onDelete?.(); onClose(); }, color: "text-destructive", destructive: true } : null,
   ].filter(Boolean) as { icon: any; label: string; action: () => void; color: string; destructive?: boolean }[];
@@ -444,6 +472,88 @@ const VoiceRecordingBar = memo(({ duration, waveform, onCancel, onSend, uploadin
   </div>
 ));
 
+/* ─── Emoji Picker Panel ─── */
+const EmojiPanel = memo(({ onPick, onClose }: { onPick: (e: string) => void; onClose: () => void }) => {
+  const [cat, setCat] = useState(0);
+  return (
+    <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }}
+      className="overflow-hidden border-t border-border/15 bg-background/95 backdrop-blur-xl">
+      <div className="flex items-center gap-1 px-2 pt-2 overflow-x-auto">
+        {EMOJI_CATEGORIES.map((c, i) => (
+          <button key={c.name} onClick={() => setCat(i)}
+            className={`px-3 py-1.5 rounded-lg text-[11px] font-cairo font-bold whitespace-nowrap transition-colors ${cat === i ? "bg-primary/15 text-primary" : "text-muted-foreground hover:bg-secondary/30"}`}>
+            {c.name}
+          </button>
+        ))}
+        <button onClick={onClose} className="ml-auto p-1.5 rounded-lg hover:bg-secondary/30 flex-shrink-0">
+          <X size={14} className="text-muted-foreground" />
+        </button>
+      </div>
+      <div className="grid grid-cols-8 gap-1 p-2 max-h-52 overflow-y-auto">
+        {EMOJI_CATEGORIES[cat].emojis.map((e, i) => (
+          <button key={`${e}-${i}`} onClick={() => onPick(e)}
+            className="text-xl p-1.5 rounded-lg hover:bg-secondary/40 transition-colors leading-none">
+            {e}
+          </button>
+        ))}
+      </div>
+    </motion.div>
+  );
+});
+
+/* ─── Forward Dialog ─── */
+const ForwardDialog = memo(({ onClose, onPick, currentUserId, currentChatId }: {
+  onClose: () => void; onPick: (chatId: string, otherName: string) => void;
+  currentUserId?: string; currentChatId?: string;
+}) => {
+  const { data: chats = [] } = useQuery({
+    queryKey: ["forward-chats", currentUserId],
+    queryFn: async () => {
+      if (!currentUserId) return [];
+      const { data } = await supabase.from("chats")
+        .select("id, user1_id, user2_id, user1:profiles!chats_user1_id_fkey(id,username,full_name,avatar_url), user2:profiles!chats_user2_id_fkey(id,username,full_name,avatar_url)")
+        .or(`user1_id.eq.${currentUserId},user2_id.eq.${currentUserId}`)
+        .order("last_message_at", { ascending: false }).limit(50);
+      return data || [];
+    },
+    enabled: !!currentUserId,
+  });
+  const [q, setQ] = useState("");
+  const list = (chats as any[]).filter((c) => c.id !== currentChatId).map((c) => {
+    const other = c.user1_id === currentUserId ? c.user2 : c.user1;
+    return { id: c.id, name: other?.full_name || other?.username || "?", avatar: other?.avatar_url };
+  }).filter((c) => !q || c.name.toLowerCase().includes(q.toLowerCase()));
+
+  return (
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[60] bg-background/80 backdrop-blur-sm flex items-end justify-center" onClick={onClose}>
+      <motion.div initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
+        transition={{ type: "spring", damping: 28, stiffness: 320 }}
+        className="w-full max-w-lg bg-card border-t border-border/20 rounded-t-3xl p-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))] max-h-[75vh] flex flex-col"
+        onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-3">
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-secondary/40"><X size={16} /></button>
+          <h3 className="font-cairo font-bold text-foreground">إعادة توجيه إلى</h3>
+        </div>
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="ابحث..."
+          className="w-full bg-secondary/30 rounded-xl px-3 py-2 text-sm font-cairo outline-none border border-border/20 focus:border-primary/40 mb-3 text-right" />
+        <div className="flex-1 overflow-y-auto space-y-1">
+          {list.length === 0 ? (
+            <p className="text-center text-sm text-muted-foreground font-cairo py-6">مفيش محادثات</p>
+          ) : list.map((c) => (
+            <button key={c.id} onClick={() => onPick(c.id, c.name)}
+              className="w-full flex items-center gap-3 p-2.5 rounded-xl hover:bg-secondary/40 transition-colors text-right">
+              <UserAvatar url={c.avatar} name={c.name} size="sm" />
+              <span className="flex-1 font-cairo font-semibold text-sm text-foreground truncate">{c.name}</span>
+              <Forward size={14} className="text-muted-foreground" />
+            </button>
+          ))}
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+});
+
 /* ─── Main ChatPage ─── */
 const ChatPage = () => {
   const { chatId } = useParams();
@@ -490,6 +600,37 @@ const ChatPage = () => {
   const [showMenu, setShowMenu] = useState(false);
   const [showNickname, setShowNickname] = useState(false);
   const [showScrollBtn, setShowScrollBtn] = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [showEmoji, setShowEmoji] = useState(false);
+  const [reactingToId, setReactingToId] = useState<string | null>(null);
+  const [forwardId, setForwardId] = useState<string | null>(null);
+  const [starredIds, setStarredIds] = useState<Set<string>>(() => {
+    try { return new Set(JSON.parse(localStorage.getItem("mstkhbi.starred") || "[]")); }
+    catch { return new Set(); }
+  });
+  const toggleStar = useCallback((id: string) => {
+    setStarredIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) { next.delete(id); toast("تم إلغاء التمييز"); }
+      else { next.add(id); toast.success("تم التمييز ⭐"); }
+      try { localStorage.setItem("mstkhbi.starred", JSON.stringify(Array.from(next))); } catch {}
+      return next;
+    });
+  }, []);
+  const handleForward = useCallback(async (targetChatId: string, otherName: string) => {
+    const m = (messages as Msg[]).find((x) => x.id === forwardId);
+    if (!m) { setForwardId(null); return; }
+    const safeContent = sanitizeTextForDatabase(m.content);
+    const { error } = await supabase.from("chat_messages").insert({
+      chat_id: targetChatId, sender_id: user?.id,
+      content: safeContent || (m.media_type === "image" ? "📷 صورة" : m.media_type === "audio" ? "🎤 رسالة صوتية" : ""), media_url: m.media_url, media_type: m.media_type,
+      audio_duration: m.audio_duration, waveform: m.waveform as any, status: "sent",
+    });
+    if (error) toast.error("فشل التوجيه");
+    else toast.success(`تم التوجيه إلى ${otherName} ✅`);
+    setForwardId(null);
+  }, [forwardId, messages, user?.id]);
 
   const fileRef = useRef<HTMLInputElement>(null);
   const textRef = useRef<HTMLTextAreaElement>(null);
@@ -556,6 +697,16 @@ const ChatPage = () => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: smooth ? "smooth" : "instant" });
   }, []);
 
+  const jumpToMessage = useCallback((id: string) => {
+    const el = scrollRef.current?.querySelector(`[data-msg-id="${id}"]`) as HTMLElement | null;
+    if (!el) { toast.info("الرسالة مش موجودة في القائمة"); return; }
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    el.classList.add("ring-2", "ring-primary", "ring-offset-2", "ring-offset-background");
+    setTimeout(() => {
+      el.classList.remove("ring-2", "ring-primary", "ring-offset-2", "ring-offset-background");
+    }, 1500);
+  }, []);
+
   useEffect(() => { scrollToBottom(false); }, [scrollToBottom]);
   useEffect(() => { scrollToBottom(); }, [messages.length, isOtherTyping, scrollToBottom]);
 
@@ -590,7 +741,12 @@ const ChatPage = () => {
   /* Derived */
   const activeMsg = actionId ? (messages as Msg[]).find((m) => m.id === actionId) : null;
   const replyMsg = replyId ? (messages as Msg[]).find((m) => m.id === replyId) : null;
-  const grouped = groupMessages(messages as Msg[]);
+  const filteredMessages = useMemo(() => {
+    if (!showSearch || !searchQuery.trim()) return messages as Msg[];
+    const q = searchQuery.trim().toLowerCase();
+    return (messages as Msg[]).filter((m) => (m.content || "").toLowerCase().includes(q));
+  }, [messages, showSearch, searchQuery]);
+  const grouped = groupMessages(filteredMessages);
   const hasContent = text.trim().length > 0 || images.length > 0;
 
   /* Auto-grow textarea */
@@ -605,21 +761,22 @@ const ChatPage = () => {
   /* Send */
   const handleSend = useCallback(async () => {
     if (isUserBlocked) return;
+    const safeText = sanitizeTextForDatabase(text);
 
     if (images.length > 0) {
       setUploading(true);
       for (const file of images) {
         const url = await uploadImage(file);
-        if (url) await sendChatMessage.mutateAsync({ content: text.trim() || "", mediaUrl: url, mediaType: "image", replyToId: replyId || undefined });
+        if (url) await sendChatMessage.mutateAsync({ content: safeText, mediaUrl: url, mediaType: "image", replyToId: replyId || undefined });
       }
       setImages([]);
       setUploading(false);
-    } else if (text.trim()) {
+    } else if (safeText) {
       if (editId) {
-        editMessage.mutate({ id: editId, content: text.trim() });
+        editMessage.mutate({ id: editId, content: safeText });
         setEditId(null);
       } else {
-        sendChatMessage.mutate({ content: text.trim(), replyToId: replyId || undefined });
+        sendChatMessage.mutate({ content: safeText, replyToId: replyId || undefined });
       }
     }
     setText("");
@@ -710,7 +867,7 @@ const ChatPage = () => {
               <p className="font-cairo font-bold text-primary">{selectedIds.size} محدد</p>
             </div>
           ) : (
-            <button onClick={() => {}} className="flex items-center gap-2.5 flex-1 min-w-0">
+            <button onClick={() => { const uname = (otherUser as any)?.username; if (uname) navigate(`/${uname}`); }} className="flex items-center gap-2.5 flex-1 min-w-0">
               <div className="flex-1 min-w-0 text-right">
                 <div className="flex items-center gap-1 justify-end">
                   <p className="font-cairo font-bold text-[15px] text-foreground leading-tight truncate">{displayName}</p>
@@ -764,7 +921,7 @@ const ChatPage = () => {
                           { icon: Edit3, label: "تعديل اسم الصديق", action: () => { setShowNickname(true); setShowMenu(false); }, color: "text-primary" },
                           { icon: CheckSquare, label: "تحديد رسائل", action: () => { setSelectionMode(true); setShowMenu(false); }, color: "text-accent" },
                           { icon: Eraser, label: "تنظيف المحادثة", action: () => { clearAllMessages.mutate(); toast.success("تم 🧹"); setShowMenu(false); }, color: "text-foreground" },
-                          { icon: Search, label: "بحث في الرسائل", action: () => { toast.info("قريبًا ✨"); setShowMenu(false); }, color: "text-foreground" },
+                          { icon: Search, label: "بحث في الرسائل", action: () => { setShowSearch(true); setShowMenu(false); }, color: "text-foreground" },
                           { icon: Ban, label: "حظر", action: handleBlock, color: "text-destructive" },
                           { icon: Trash2, label: "حذف المحادثة", action: handleDeleteChat, color: "text-destructive" },
                         ].map((item, i) => (
@@ -782,6 +939,34 @@ const ChatPage = () => {
             </div>
           )}
         </div>
+
+
+
+        {/* Search bar */}
+        <AnimatePresence>
+          {showSearch && (
+            <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden border-t border-border/15">
+              <div className="flex items-center gap-2 px-3 py-2 max-w-2xl mx-auto">
+                <Search size={16} className="text-muted-foreground flex-shrink-0" />
+                <input
+                  autoFocus
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Escape") { setShowSearch(false); setSearchQuery(""); } }}
+                  placeholder="بحث في الرسائل..."
+                  className="flex-1 bg-transparent text-sm font-cairo text-foreground placeholder:text-muted-foreground outline-none"
+                />
+                {searchQuery && (
+                  <span className="text-[10px] text-muted-foreground font-mono">{filteredMessages.length}</span>
+                )}
+                <button onClick={() => { setShowSearch(false); setSearchQuery(""); }} className="p-1 rounded-lg hover:bg-secondary/50">
+                  <ArrowRight size={16} className="text-muted-foreground rotate-180" />
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </header>
 
       {/* ──── Messages ──── */}
@@ -815,26 +1000,59 @@ const ChatPage = () => {
                   const reactions = reactionsByMessage.get(msg.id);
 
                   return (
-                    <Bubble key={msg.id}
-                      msg={msg} isMine={isMine} prevSameSender={prevSameSender}
-                      replyMsg={rMsg} reactions={reactions}
-                      selected={selectedIds.has(msg.id)} selectionMode={selectionMode}
-                      onLongPress={() => {
-                        if (msg.is_deleted) return;
-                        if (!selectionMode) {
-                          if (navigator.vibrate) navigator.vibrate(18);
-                          setSelectionMode(true);
-                          setSelectedIds(new Set([msg.id]));
-                        } else toggleSelect(msg.id);
-                      }}
-                      onReply={() => { setReplyId(msg.id); setEditId(null); textRef.current?.focus(); }}
-                      onReact={(e) => toggleReaction.mutate({ messageId: msg.id, emoji: e })}
-                      onImageOpen={setViewerUrl}
-                      onClick={() => {
-                        if (selectionMode) toggleSelect(msg.id);
-                        else if (!msg.is_deleted) setActionId(msg.id);
-                      }}
-                    />
+                    <div key={msg.id} className="relative">
+                      <Bubble
+                        msg={msg} isMine={isMine} prevSameSender={prevSameSender}
+                        replyMsg={rMsg} reactions={reactions}
+                        selected={selectedIds.has(msg.id)} selectionMode={selectionMode}
+                        onLongPress={() => {
+                          if (msg.is_deleted) return;
+                          setReactingToId(null);
+                          if (selectionMode) toggleSelect(msg.id);
+                          else {
+                            if (navigator.vibrate) navigator.vibrate(18);
+                            setActionId(msg.id);
+                          }
+                        }}
+                        onReply={() => { setReplyId(msg.id); setEditId(null); setActionId(null); setReactingToId(null); textRef.current?.focus(); }}
+                        onReact={(e) => toggleReaction.mutate({ messageId: msg.id, emoji: e })}
+                        onImageOpen={setViewerUrl}
+                        onJumpToReply={jumpToMessage}
+                        onClick={() => {
+                          if (selectionMode) toggleSelect(msg.id);
+                        }}
+                      />
+                      <AnimatePresence>
+                        {reactingToId === msg.id && !selectionMode && !msg.is_deleted && (
+                          <motion.div
+                            initial={{ opacity: 0, scale: 0.9, y: 6 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.9, y: 6 }}
+                            className={`mx-3 mt-1 mb-2 flex items-center gap-1 rounded-full border border-border/25 bg-card/95 px-2 py-1.5 shadow-lg backdrop-blur-xl ${isMine ? "justify-start" : "justify-end"}`}
+                          >
+                            {QUICK_EMOJIS.map((emoji) => (
+                              <button
+                                key={emoji}
+                                type="button"
+                                onClick={() => { toggleReaction.mutate({ messageId: msg.id, emoji }); setReactingToId(null); }}
+                                className="h-8 w-8 rounded-full text-lg leading-none transition-transform hover:scale-125 hover:bg-secondary/50"
+                                aria-label={`ريأكت ${emoji}`}
+                              >
+                                {emoji}
+                              </button>
+                            ))}
+                            <button
+                              type="button"
+                              onClick={() => setActionId(msg.id)}
+                              className="h-8 w-8 rounded-full flex items-center justify-center text-muted-foreground hover:text-primary hover:bg-secondary/50"
+                              aria-label="المزيد"
+                            >
+                              <MoreVertical size={15} />
+                            </button>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
                   );
                 })}
               </div>
@@ -915,11 +1133,12 @@ const ChatPage = () => {
 
             {/* Text input */}
             <div className="flex-1 flex items-end bg-secondary/40 border border-border/20 rounded-3xl px-3 py-1.5 focus-within:border-primary/40 transition-colors">
-              <button className="text-muted-foreground hover:text-foreground transition-colors mr-1 mb-0.5 flex-shrink-0">
+              <button onClick={() => setShowEmoji((v) => !v)} className={`transition-colors mr-1 mb-0.5 flex-shrink-0 ${showEmoji ? "text-primary" : "text-muted-foreground hover:text-foreground"}`}>
                 <Smile size={18} />
               </button>
               <textarea ref={textRef} value={text} onChange={autoGrow}
                 onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+                onFocus={() => setShowEmoji(false)}
                 placeholder={editId ? "عدّل الرسالة..." : "اكتب رسالة..."}
                 rows={1}
                 className="flex-1 bg-transparent resize-none outline-none text-[15px] font-cairo text-foreground placeholder:text-muted-foreground py-1 max-h-[140px] leading-normal" />
@@ -947,6 +1166,14 @@ const ChatPage = () => {
             </div>
           </div>
         )}
+        <AnimatePresence>
+          {showEmoji && !isUserBlocked && !recorder.isRecording && (
+            <EmojiPanel
+              onPick={(e) => { setText((t) => t + e); textRef.current?.focus(); }}
+              onClose={() => setShowEmoji(false)}
+            />
+          )}
+        </AnimatePresence>
       </div>
 
       {/* ──── Actions Sheet ──── */}
@@ -955,12 +1182,27 @@ const ChatPage = () => {
           <MessageActionsSheet
             msg={activeMsg}
             isMine={activeMsg.sender_id === user?.id}
+            isStarred={starredIds.has(actionId)}
             onClose={() => setActionId(null)}
             onReply={() => { setReplyId(actionId); setEditId(null); textRef.current?.focus(); }}
             onReact={(e) => toggleReaction.mutate({ messageId: actionId, emoji: e })}
             onEdit={() => { setEditId(actionId); setText(activeMsg.content || ""); setReplyId(null); textRef.current?.focus(); }}
             onDelete={() => { deleteMessage.mutate(actionId); toast.success("تم الحذف"); }}
             onCopy={() => { if (activeMsg.content) { navigator.clipboard.writeText(activeMsg.content); toast.success("تم النسخ"); } }}
+            onForward={() => setForwardId(actionId)}
+            onStar={() => toggleStar(actionId)}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* ──── Forward Dialog ──── */}
+      <AnimatePresence>
+        {forwardId && (
+          <ForwardDialog
+            currentUserId={user?.id}
+            currentChatId={chatId}
+            onClose={() => setForwardId(null)}
+            onPick={handleForward}
           />
         )}
       </AnimatePresence>

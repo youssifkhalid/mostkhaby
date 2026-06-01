@@ -19,7 +19,6 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSettings } from "@/hooks/useSettings";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useLanguage } from "@/contexts/LanguageContext";
-import AccountSwitcher from "@/components/AccountSwitcher";
 import { SOUND_OPTIONS, playNotificationSound } from "@/lib/notificationSounds";
 
 type SocialLinks = { instagram?: string; tiktok?: string; whatsapp?: string; snapchat?: string; facebook?: string; twitter?: string; messenger?: string; phone?: string };
@@ -156,44 +155,55 @@ const SettingsPage = () => {
   );
 
   return (
-    <div className="min-h-screen pb-24">
+    <div className="min-h-screen pb-24 relative">
       <TopBar />
-      <div className="max-w-lg mx-auto px-4 py-4 space-y-4">
-        {/* Tabs */}
-        <div className="flex gap-1.5 overflow-x-auto pb-2 scrollbar-hide relative">
+
+      {/* Ambient gradient */}
+      <div className="absolute top-0 inset-x-0 h-40 -z-0 pointer-events-none overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-b from-primary/15 via-accent/10 to-transparent" />
+      </div>
+
+      <div className="max-w-lg mx-auto px-4 py-4 space-y-4 relative z-10">
+
+        {/* Settings header */}
+        <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}
+          className="glass-card p-4 flex items-center gap-3">
+          <div className="w-11 h-11 rounded-2xl gradient-primary flex items-center justify-center shadow-[0_4px_16px_hsl(var(--primary)/0.4)]">
+            <User size={20} className="text-primary-foreground" />
+          </div>
+          <div className="flex-1 text-right">
+            <h1 className="font-cairo font-bold text-foreground text-base">{lang === "ar" ? "الإعدادات" : "Settings"}</h1>
+            <p className="text-[11px] text-muted-foreground font-cairo">@{profile?.username}</p>
+          </div>
+        </motion.div>
+
+        {/* Tabs — grid layout for full visibility */}
+        <div className="grid grid-cols-3 gap-2">
           {tabs.map((tab) => {
             const isActive = activeTab === tab.id;
             return (
               <motion.button
                 key={tab.id}
-                whileTap={{ scale: 0.95 }}
+                whileTap={{ scale: 0.94 }}
                 onClick={() => setActiveTab(tab.id)}
-                className={`px-3.5 py-2.5 rounded-xl text-xs font-cairo font-semibold whitespace-nowrap transition-all flex items-center gap-1.5 relative z-10 ${
+                className={`flex flex-col items-center justify-center gap-1.5 py-3 rounded-2xl text-[11px] font-cairo font-bold transition-all relative overflow-hidden ${
                   isActive
-                    ? "text-primary-foreground font-bold"
-                    : "bg-secondary/40 text-muted-foreground hover:bg-secondary/60"
+                    ? "gradient-primary text-primary-foreground shadow-[0_6px_18px_hsl(var(--primary)/0.4)]"
+                    : "glass-card text-muted-foreground hover:text-foreground"
                 }`}
               >
-                {isActive && (
-                  <motion.div
-                    layoutId="activeSettingsTab"
-                    className="absolute inset-0 bg-primary rounded-xl -z-10 shadow-[0_4px_15px_hsl(var(--primary)/0.35)]"
-                    transition={{ type: "spring", stiffness: 380, damping: 30 }}
-                  />
-                )}
-                <tab.icon size={13} className="relative z-10" />
-                <span className="relative z-10">{tab.label}</span>
+                <tab.icon size={18} />
+                <span>{tab.label}</span>
               </motion.button>
             );
           })}
         </div>
 
+
         <AnimatePresence mode="wait">
         {/* Account */}
         {activeTab === "account" && (
           <motion.div key="account" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-4">
-            <AccountSwitcher />
-
             <div className="glass-card overflow-hidden divide-y divide-border/15">
               {[
                 { icon: User, label: lang === "ar" ? "الإسم" : "Name", value: profile?.full_name || "" },

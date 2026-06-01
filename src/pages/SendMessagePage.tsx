@@ -12,6 +12,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useFollows } from "@/hooks/useFollows";
 import { useProfileVisits } from "@/hooks/useProfileVisits";
 import { messageSchema } from "@/lib/contentFilter";
+import { sanitizeTextForDatabase } from "@/lib/sanitizeText";
 import { formatDistanceToNow } from "date-fns";
 import { ar } from "date-fns/locale";
 
@@ -68,19 +69,24 @@ const { follow, following = [] } = useFollows();
   };
 
   const handleSend = async () => {
-    if (!message.trim() || !receiverProfile) return;
-    const result = messageSchema.safeParse({ content: message.trim() });
+    const safeMessage = sanitizeTextForDatabase(message);
+    if (!safeMessage || !receiverProfile) return;
+    const result = messageSchema.safeParse({ content: safeMessage });
     if (!result.success) { setValidationError(result.error.errors[0].message); return; }
     setValidationError("");
     if (!checkRateLimit()) return;
     if (navigator.vibrate) navigator.vibrate([10, 50, 10]);
     try {
       const sender_id = isAnonymous ? undefined : user?.id;
-      await sendMessage.mutateAsync({ receiver_id: receiverProfile.id, content: message.trim(), sender_id });
+      await sendMessage.mutateAsync({ receiver_id: receiverProfile.id, content: safeMessage, sender_id });
       setSent(true);
       toast.success("الرسالة اتبعتت! ✉️");
       setTimeout(() => { setSent(false); setMessage(""); }, 2500);
-    } catch { toast.error("حصل مشكلة، جرب تاني"); }
+    } catch (error) {
+      const message = (error as any)?.message || "";
+      const isRuleIssue = message.includes("row-level security") || message.includes("permission denied");
+      toast.error(isRuleIssue ? "صلاحيات الرسائل محتاجة تحديث من قاعدة البيانات" : `حصل مشكلة، جرب تاني${message ? `: ${message}` : ""}`);
+    }
   };
 
   const handleFollow = () => {
