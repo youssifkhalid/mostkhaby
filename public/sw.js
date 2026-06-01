@@ -7,8 +7,8 @@
 //  • Click → focus existing client or open /chat/<chatId>
 //  • Optional "Mark read" action via postMessage to the focused client
 //
-// IMPORTANT: this SW is INTENTIONALLY NOT caching app shell — Lovable preview
-// and live deploys need fresh HTML on every navigation. We only handle push.
+// IMPORTANT: this SW is INTENTIONALLY NOT caching app shell —
+// live deploys need fresh HTML on every navigation. We only handle push.
 
 const SW_VERSION = "mostkhaby-v2";
 const DB_NAME = "mostkhaby-sw";
