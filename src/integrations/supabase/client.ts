@@ -1,301 +1,95 @@
 // src/integrations/supabase/client.ts
 
-import {
-  createClient,
-  type SupabaseClient,
-} from "@supabase/supabase-js";
+import { createClient } from "@supabase/supabase-js";
 
-import type { Database } from "./types";
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "https://example.supabase.co";
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "anon-key";
 
-/* ════════════════════════════════════════════════════════════════
-   ENV
-════════════════════════════════════════════════════════════════ */
+const DEV = import.meta.env.DEV;
+const log = (...args: any[]) => { if (DEV) console.log(...args); };
 
-let SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "https://example.supabase.co";
-let SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "anon-key";
+const storage = typeof window !== "undefined" ? window.localStorage : undefined;
 
-/* ════════════════════════════════════════════════════════════════
-   ENV VALIDATION
-════════════════════════════════════════════════════════════════ */
-
-// Validate environment variables with warnings instead of throwing errors
-if (!SUPABASE_URL) {
-  console.warn("[Supabase] VITE_SUPABASE_URL غير موجود داخل .env. Using empty string as fallback.");
-  SUPABASE_URL = "";
-}
-
-if (!SUPABASE_ANON_KEY) {
-  console.warn("[Supabase] VITE_SUPABASE_ANON_KEY غير موجود داخل .env. Using empty string as fallback.");
-  SUPABASE_ANON_KEY = "";
-}
-
-/* ════════════════════════════════════════════════════════════════
-   STORAGE
-════════════════════════════════════════════════════════════════ */
-
-const storage =
-  typeof window !== "undefined"
-    ? window.localStorage
-    : undefined;
-
-/* ════════════════════════════════════════════════════════════════
-   CLIENT OPTIONS
-════════════════════════════════════════════════════════════════ */
-
-const clientOptions = {
-  db: {
-    schema: "public",
-  },
-
+export const supabase: any = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  db: { schema: "public" },
   auth: {
     storage,
-
     persistSession: true,
-
     autoRefreshToken: true,
-
     detectSessionInUrl: true,
-
-    flowType: "pkce" as const,
-
+    flowType: "pkce",
     debug: false,
   },
-
   realtime: {
-    params: {
-      eventsPerSecond: 20,
-    },
-
+    params: { eventsPerSecond: 20 },
     heartbeatIntervalMs: 25000,
-
-    reconnectAfterMs: (tries: number) => {
-      return Math.min(
-        1000 * Math.pow(2, tries),
-        30000
-      );
-    },
-
+    reconnectAfterMs: (tries: number) => Math.min(1000 * Math.pow(2, tries), 30000),
     timeout: 20000,
   },
-
   global: {
     headers: {
       "x-client-info": "mostkhaby-web",
       "x-app-version": "1.0.0",
     },
   },
-};
-
-/* ════════════════════════════════════════════════════════════════
-   CREATE CLIENT
-════════════════════════════════════════════════════════════════ */
-
-// NOTE: generated types incomplete — using untyped client until types are regenerated.
-export const supabase: any =
-  createClient(
-    SUPABASE_URL,
-    SUPABASE_ANON_KEY,
-    clientOptions
-  );
-
-/* ════════════════════════════════════════════════════════════════
-   SESSION RECOVERY
-════════════════════════════════════════════════════════════════ */
-
-async function restoreSession() {
-  try {
-    const {
-      data: { session },
-      error,
-    } = await supabase.auth.getSession();
-
-    if (error) {
-      console.error(
-        "[Supabase Session Error]",
-        error.message
-      );
-
-      await clearBrokenSession();
-
-      return null;
-    }
-
-    if (!session) {
-      console.log(
-        "[Supabase] Anonymous mode enabled"
-      );
-
-      return null;
-    }
-
-    console.log(
-      "[Supabase] Session restored:",
-      session.user.id
-    );
-
-    return session;
-  } catch (error) {
-    console.error(
-      "[Supabase Fatal Session Error]",
-      error
-    );
-
-    await clearBrokenSession();
-
-    return null;
-  }
-}
-
-/* ════════════════════════════════════════════════════════════════
-   CLEAR BROKEN SESSION
-════════════════════════════════════════════════════════════════ */
+});
 
 async function clearBrokenSession() {
   try {
     await supabase.auth.signOut();
-
     if (typeof window !== "undefined") {
-      const keys = Object.keys(localStorage);
-
-      keys.forEach((key) => {
-        if (
-          key.includes("supabase") ||
-          key.includes("sb-")
-        ) {
+      Object.keys(localStorage).forEach((key) => {
+        if (key.includes("supabase") || key.includes("sb-")) {
           localStorage.removeItem(key);
         }
       });
     }
-
-    console.log(
-      "[Supabase] Broken session cleared"
-    );
+    log("[Supabase] Broken session cleared");
   } catch (error) {
-    console.error(
-      "[Supabase Clear Session Error]",
-      error
-    );
+    console.error("[Supabase Clear Session Error]", error);
   }
 }
 
-/* ════════════════════════════════════════════════════════════════
-   AUTH STATE LISTENER
-════════════════════════════════════════════════════════════════ */
-
-supabase.auth.onAuthStateChange(
-  async (event, session) => {
-    console.log(
-      "[Supabase Auth Event]",
-      event
-    );
-
-    switch (event) {
-      case "SIGNED_IN":
-        console.log(
-          "[Supabase] User signed in:",
-          session?.user?.id
-        );
-        break;
-
-      case "SIGNED_OUT":
-        console.log(
-          "[Supabase] User signed out"
-        );
-        break;
-
-      case "TOKEN_REFRESHED":
-        console.log(
-          "[Supabase] Token refreshed"
-        );
-        break;
-
-      case "USER_UPDATED":
-        console.log(
-          "[Supabase] User updated"
-        );
-        break;
-
-      default:
-        break;
+async function restoreSession() {
+  try {
+    const { data: { session }, error } = await supabase.auth.getSession();
+    if (error) {
+      console.error("[Supabase Session Error]", error.message);
+      await clearBrokenSession();
+      return null;
     }
+    if (!session) {
+      log("[Supabase] Anonymous mode");
+      return null;
+    }
+    log("[Supabase] Session restored:", session.user.id);
+    return session;
+  } catch (error) {
+    console.error("[Supabase Fatal Session Error]", error);
+    await clearBrokenSession();
+    return null;
   }
-);
+}
 
-/* ════════════════════════════════════════════════════════════════
-   REALTIME TEST
-════════════════════════════════════════════════════════════════ */
-
-const realtimeChannel = supabase.channel(
-  "system-health-check",
-  {
-    config: {
-      broadcast: {
-        ack: false,
-      },
-
-      presence: {
-        key: "system",
-      },
-    },
-  }
-);
-
-realtimeChannel.subscribe((status) => {
-  console.log(
-    "[Realtime Status]",
-    status
-  );
+supabase.auth.onAuthStateChange((event: string, session: any) => {
+  log("[Supabase Auth]", event, session?.user?.id ?? "");
 });
 
-/* ════════════════════════════════════════════════════════════════
-   NETWORK STATUS
-════════════════════════════════════════════════════════════════ */
+const realtimeChannel = supabase.channel("system-health-check", {
+  config: { broadcast: { ack: false }, presence: { key: "system" } },
+});
+realtimeChannel.subscribe((status: string) => log("[Realtime]", status));
 
 if (typeof window !== "undefined") {
-  window.addEventListener("online", () => {
-    console.log(
-      "[Network] Internet connection restored"
-    );
-  });
-
-  window.addEventListener("offline", () => {
-    console.log(
-      "[Network] Internet connection lost"
-    );
-  });
+  window.addEventListener("online", () => log("[Network] online"));
+  window.addEventListener("offline", () => log("[Network] offline"));
 }
-
-/* ════════════════════════════════════════════════════════════════
-   INITIALIZE
-════════════════════════════════════════════════════════════════ */
 
 restoreSession();
 
-/* ════════════════════════════════════════════════════════════════
-   DEBUG
-════════════════════════════════════════════════════════════════ */
-
-console.log(
-  "[Supabase Initialized]",
-  SUPABASE_URL
-);
-
-console.log(
-  "[Supabase Anon Key Loaded]",
-  !!SUPABASE_ANON_KEY
-);
-
-console.log(
-  "[Supabase Storage Enabled]",
-  !!storage
-);
-
-console.log(
-  "[Supabase Realtime Enabled]"
-);
-
-/* ════════════════════════════════════════════════════════════════
-   EXPORTS
-════════════════════════════════════════════════════════════════ */
+if (DEV) {
+  log("[Supabase Initialized]", SUPABASE_URL);
+  log("[Supabase Anon Key Loaded]", !!SUPABASE_ANON_KEY);
+}
 
 export default supabase;
