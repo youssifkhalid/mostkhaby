@@ -20,13 +20,22 @@ const VoicePlayer = ({ url, duration = 0, waveform = [], isMine }: Props) => {
     const a = new Audio(url);
     audioRef.current = a;
     a.preload = "metadata";
-    a.onended = () => { setPlaying(false); setProgress(0); setCurrentTime(0); };
-    a.ontimeupdate = () => {
+    const onEnded = () => { setPlaying(false); setProgress(0); setCurrentTime(0); };
+    const onTime = () => {
       const p = (a.currentTime / (a.duration || duration || 1)) * 100;
       setProgress(p);
       setCurrentTime(Math.floor(a.currentTime));
     };
-    return () => { a.pause(); a.src = ""; };
+    a.addEventListener("ended", onEnded);
+    a.addEventListener("timeupdate", onTime);
+    return () => {
+      a.pause();
+      a.removeEventListener("ended", onEnded);
+      a.removeEventListener("timeupdate", onTime);
+      a.src = "";
+      a.load();
+      audioRef.current = null;
+    };
   }, [url, duration]);
 
   const toggle = () => {

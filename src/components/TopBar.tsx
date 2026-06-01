@@ -12,14 +12,17 @@ const TopBar = () => {
 
   return (
     <header className="sticky top-0 z-40 bg-background/60 backdrop-blur-2xl border-b border-border/15">
-      <div className="flex items-center justify-between px-4 py-3 max-w-lg mx-auto">
-        <div className="flex items-center gap-1.5">
+      <div className="flex items-center justify-between px-3 py-2.5 max-w-lg mx-auto gap-2">
+        {/* Left cluster: quick page actions */}
+        <div className="flex items-center gap-1">
           <motion.button
             whileTap={{ scale: 0.9 }}
             onClick={() => navigate("/notifications")}
             className="relative p-2 rounded-xl hover:bg-secondary/50 transition-colors"
+            aria-label="الإشعارات"
+            title="الإشعارات"
           >
-            <Bell size={20} className="text-foreground" />
+            <Bell size={18} className="text-foreground" />
             {unreadCount > 0 && (
               <motion.span
                 initial={{ scale: 0 }}
@@ -31,12 +34,22 @@ const TopBar = () => {
             )}
           </motion.button>
           {canInstall && (
-            <motion.button whileTap={{ scale: 0.9 }} onClick={install} className="p-2 rounded-xl hover:bg-secondary/50 transition-colors">
-              <Download size={20} className="text-accent" />
+            <motion.button
+              whileTap={{ scale: 0.9 }}
+              onClick={install}
+              className="p-2 rounded-xl hover:bg-secondary/50 transition-colors"
+              aria-label="تثبيت التطبيق"
+              title="تثبيت التطبيق"
+            >
+              <Download size={18} className="text-accent" />
             </motion.button>
           )}
         </div>
-        <MstkhbiLogo size="sm" />
+
+        {/* Right cluster: logo */}
+        <div className="flex items-center gap-2">
+          <MstkhbiLogo size="sm" />
+        </div>
       </div>
     </header>
   );

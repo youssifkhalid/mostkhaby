@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, ChevronDown, Check, X } from "lucide-react";
+import { ChevronDown, Check, X, UserRoundPlus } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { useProfile } from "@/hooks/useProfile";
@@ -34,7 +34,11 @@ const removeAccount = (userId: string) => {
   localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(accounts));
 };
 
-const AccountSwitcher = () => {
+interface AccountSwitcherProps {
+  variant?: "card" | "icon";
+}
+
+const AccountSwitcher = ({ variant = "card" }: AccountSwitcherProps) => {
   const { user, session } = useAuth();
   const { profile } = useProfile();
   const navigate = useNavigate();
@@ -60,7 +64,6 @@ const AccountSwitcher = () => {
     if (account.userId === user?.id || switching) return;
     setSwitching(true);
     try {
-      // Clear cache before switching
       queryClient.clear();
       const { error } = await supabase.auth.refreshSession({ refresh_token: account.refreshToken });
       if (error) throw error;
@@ -77,31 +80,48 @@ const AccountSwitcher = () => {
 
   const handleAddAccount = useCallback(() => {
     setOpen(false);
-    // Navigate first, then sign out inside AuthPage
     navigate("/auth?add=true");
   }, [navigate]);
 
   const otherAccounts = accounts.filter(a => a.userId !== user?.id);
+  const totalCount = accounts.length;
 
   return (
     <>
-      <motion.button
-        whileTap={{ scale: 0.97 }}
-        onClick={() => setOpen(true)}
-        className="w-full glass-card p-4 flex items-center gap-3 hover:border-primary/20 transition-all"
-      >
-        <ChevronDown size={16} className="text-muted-foreground flex-shrink-0" />
-        <div className="flex-1 text-right min-w-0">
-          <p className="font-cairo font-bold text-sm text-foreground truncate">{profile?.full_name || user?.email}</p>
-          <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
-        </div>
-        <UserAvatar
-          url={profile?.avatar_url}
-          name={profile?.full_name || user?.email}
-          size="sm"
-          isOnline={true}
-        />
-      </motion.button>
+      {variant === "icon" ? (
+        <motion.button
+          whileTap={{ scale: 0.9 }}
+          onClick={() => setOpen(true)}
+          className="relative h-9 w-9 rounded-full border border-border/25 bg-secondary/45 shadow-sm hover:bg-secondary/70 transition-colors flex items-center justify-center"
+          aria-label="تبديل الحساب"
+          title="تبديل / إضافة حساب"
+        >
+          <ChevronDown size={18} className="text-foreground" />
+          {totalCount > 1 && (
+            <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-[16px] px-1 rounded-full bg-accent text-accent-foreground text-[9px] font-bold flex items-center justify-center">
+              {totalCount}
+            </span>
+          )}
+        </motion.button>
+      ) : (
+        <motion.button
+          whileTap={{ scale: 0.97 }}
+          onClick={() => setOpen(true)}
+          className="w-full glass-card p-4 flex items-center gap-3 hover:border-primary/20 transition-all"
+        >
+          <ChevronDown size={16} className="text-muted-foreground flex-shrink-0" />
+          <div className="flex-1 text-right min-w-0">
+            <p className="font-cairo font-bold text-sm text-foreground truncate">{profile?.full_name || user?.email}</p>
+            <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
+          </div>
+          <UserAvatar
+            url={profile?.avatar_url}
+            name={profile?.full_name || user?.email}
+            size="sm"
+            isOnline={true}
+          />
+        </motion.button>
+      )}
 
       <AnimatePresence>
         {open && (
@@ -117,7 +137,7 @@ const AccountSwitcher = () => {
               animate={{ y: 0 }}
               exit={{ y: "100%" }}
               transition={{ type: "spring", damping: 25, stiffness: 300 }}
-              className="w-full max-w-lg glass-card rounded-t-3xl p-5 pb-[calc(1rem+env(safe-area-inset-bottom,0px))] space-y-4"
+              className="w-full max-w-lg bg-card border-t border-border/25 rounded-t-3xl p-5 pb-[calc(1rem+env(safe-area-inset-bottom,0px))] space-y-4 shadow-2xl"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="w-10 h-1 rounded-full bg-border/50 mx-auto" />
@@ -130,8 +150,10 @@ const AccountSwitcher = () => {
                 <div className="w-10" />
               </div>
 
-              <div className="glass-card p-4 flex items-center gap-3 border-primary/30">
-                <Check size={18} className="text-primary flex-shrink-0" />
+              <div className="rounded-2xl border border-primary/30 bg-primary/10 p-4 flex items-center gap-3">
+                <div className="h-8 w-8 rounded-xl bg-primary text-primary-foreground flex items-center justify-center flex-shrink-0">
+                  <Check size={16} />
+                </div>
                 <div className="flex-1 text-right min-w-0">
                   <p className="font-cairo font-bold text-sm text-foreground truncate">{profile?.full_name || user?.email}</p>
                   <p className="text-[11px] text-muted-foreground truncate">{user?.email}</p>
@@ -154,7 +176,7 @@ const AccountSwitcher = () => {
                       whileTap={{ scale: 0.98 }}
                       onClick={() => handleSwitch(account)}
                       disabled={switching}
-                      className="w-full glass-card p-3.5 flex items-center gap-3 hover:border-primary/20 transition-all disabled:opacity-50"
+                      className="w-full rounded-2xl border border-border/20 bg-secondary/25 p-3.5 flex items-center gap-3 hover:border-primary/30 hover:bg-secondary/40 transition-all disabled:opacity-50"
                     >
                       <div className="w-5" />
                       <div className="flex-1 text-right min-w-0">
@@ -176,7 +198,7 @@ const AccountSwitcher = () => {
                 onClick={handleAddAccount}
                 className="w-full gradient-primary text-primary-foreground rounded-xl py-3.5 flex items-center justify-center gap-2 font-cairo font-bold text-sm shadow-[0_4px_20px_hsl(var(--primary)/0.4)]"
               >
-                <Plus size={18} />
+                <UserRoundPlus size={18} />
                 إضافة حساب جديد
               </motion.button>
             </motion.div>

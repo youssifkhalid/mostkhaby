@@ -1,6 +1,5 @@
-import { Heart, Trash2, Share2, Reply, Eye, EyeOff } from "lucide-react";
+import { Heart, Trash2, Reply } from "lucide-react";
 import { motion } from "framer-motion";
-import { toast } from "sonner";
 import { format, formatDistanceToNow } from "date-fns";
 import { ar } from "date-fns/locale";
 import React from "react";
@@ -32,16 +31,6 @@ const MessageCard = React.forwardRef<HTMLDivElement, MessageCardProps>(
     const fullDate = format(date, "d MMM yyyy · h:mm a", { locale: ar });
     const displayName = personName || "مجهول";
     const initial = (personName || personUsername || "?").charAt(0).toUpperCase();
-
-    const handleShare = async () => {
-      if (navigator.vibrate) navigator.vibrate(5);
-      try {
-        await navigator.clipboard.writeText(content);
-        toast.success("تم نسخ الرسالة! 📋");
-      } catch {
-        toast.error("مقدرش أنسخ");
-      }
-    };
 
     return (
       <motion.div
@@ -94,20 +83,12 @@ const MessageCard = React.forwardRef<HTMLDivElement, MessageCardProps>(
               <Reply size={17} className="text-muted-foreground hover:text-primary" />
             </motion.button>
           )}
-          {showPublicToggle && onTogglePublic && (
-            <motion.button whileTap={{ scale: 0.8 }} onClick={() => onTogglePublic(id, !!is_public)} className="p-2 rounded-lg hover:bg-accent/10 transition-colors">
-              {is_public ? <Eye size={17} className="text-accent" /> : <EyeOff size={17} className="text-muted-foreground" />}
-            </motion.button>
-          )}
           <motion.button
             whileTap={{ scale: 0.8 }}
             onClick={() => { onToggleFavorite(id, is_favorite); if (navigator.vibrate) navigator.vibrate(5); }}
             className="p-2 rounded-lg hover:bg-primary/10 transition-colors"
           >
             <Heart size={17} className={is_favorite ? "text-accent fill-accent" : "text-muted-foreground"} />
-          </motion.button>
-          <motion.button whileTap={{ scale: 0.8 }} onClick={handleShare} className="p-2 rounded-lg hover:bg-secondary/50 transition-colors">
-            <Share2 size={17} className="text-muted-foreground" />
           </motion.button>
           <motion.button
             whileTap={{ scale: 0.8 }}
