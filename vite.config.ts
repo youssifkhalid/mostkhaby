@@ -8,6 +8,9 @@ export default defineConfig({
     host: "::",
     port: 8080,
     hmr: { overlay: false },
+    headers: {
+      "Service-Worker-Allowed": "/",
+    },
   },
   plugins: [react()],
   resolve: {
@@ -15,5 +18,22 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
     dedupe: ["react", "react-dom", "react/jsx-runtime", "react/jsx-dev-runtime"],
+  },
+  build: {
+    target: "esnext",
+    rollupOptions: {
+      input: {
+        main: "index.html",
+        sw: "public/service-worker.ts",
+      },
+      output: {
+        entryFileNames: (chunkInfo) => {
+          if (chunkInfo.name === "sw") {
+            return "[name].js";
+          }
+          return "assets/[name]-[hash].js";
+        },
+      },
+    },
   },
 });
