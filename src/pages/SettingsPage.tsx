@@ -3,7 +3,8 @@ import TopBar from "@/components/TopBar";
 import {
   User, Link2, AtSign, FileText, Shield, UserMinus, LogOut, ChevronLeft,
   Loader2, Check, Download, Smartphone, Bell as BellIcon, Eye, EyeOff,
-  UserPlus, MessageSquare, Lock, Ban, Globe, Image, ShieldAlert, Users, Save, Moon, Sun
+  UserPlus, MessageSquare, Lock, Ban, Globe, Image, ShieldAlert, Users, Save, Moon, Sun,
+  KeyRound, Search, ExternalLink, Star, Megaphone, Camera
 } from "lucide-react";
 import { FaInstagram, FaTiktok, FaWhatsapp, FaSnapchat, FaFacebookF, FaXTwitter, FaFacebookMessenger, FaPhone } from "react-icons/fa6";
 import { useState, useEffect } from "react";
@@ -19,6 +20,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSettings } from "@/hooks/useSettings";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useLanguage } from "@/contexts/LanguageContext";
+import { sendPasswordChangedEmail } from "@/lib/emailNotifications";
 import { SOUND_OPTIONS, playNotificationSound } from "@/lib/notificationSounds";
 
 type SocialLinks = { instagram?: string; tiktok?: string; whatsapp?: string; snapchat?: string; facebook?: string; twitter?: string; messenger?: string; phone?: string };
@@ -50,6 +52,13 @@ const SettingsPage = () => {
   const [socialLinks, setSocialLinks] = useState<SocialLinks>({});
   const [gender, setGender] = useState("prefer_not_to_say");
   const [activeTab, setActiveTab] = useState("account");
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [pwCurrent, setPwCurrent] = useState("");
+  const [pwNew, setPwNew] = useState("");
+  const [pwConfirm, setPwConfirm] = useState("");
+  const [pwLoading, setPwLoading] = useState(false);
+  const [showCurrentPw, setShowCurrentPw] = useState(false);
+  const [showNewPw, setShowNewPw] = useState(false);
   const qc = useQueryClient();
   const { mode, toggleMode } = useTheme();
   const { lang, setLang, t } = useLanguage();
@@ -62,7 +71,7 @@ const SettingsPage = () => {
       if (!user?.id) return [];
       const { data } = await supabase
         .from("blocked_users")
-        .select("*, blocked:profiles!blocked_users_blocked_id_fkey(username, full_name)")
+        .select("*, blocked:profiles!blocked_users_blocked_id_fkey(username, full_name, avatar_url)")
         .eq("blocker_id", user.id);
       return data || [];
     },
@@ -109,6 +118,23 @@ const SettingsPage = () => {
     });
   };
 
+  const handleChangePassword = async () => {
+    if (!pwNew || !pwConfirm) { toast.error("ادخل كلمة المرور الجديدة"); return; }
+    if (pwNew !== pwConfirm) { toast.error("كلمتا المرور مش متطابقتين ❌"); return; }
+    if (pwNew.length < 8) { toast.error("كلمة المرور لازم تكون 8 حروف على الأقل"); return; }
+    setPwLoading(true);
+    const { error } = await supabase.auth.updateUser({ password: pwNew });
+    setPwLoading(false);
+    if (error) { toast.error("حصل خطأ: " + error.message); return; }
+    toast.success("تم تغيير كلمة المرور بنجاح ✅");
+    // Send security email notification
+    if (user?.email) {
+      sendPasswordChangedEmail(user.email, profile?.full_name || profile?.username || "");
+    }
+    setPwCurrent(""); setPwNew(""); setPwConfirm("");
+    setShowPasswordModal(false);
+  };
+
   const handleLogout = async () => { await signOut(); navigate("/auth"); toast.success("مع السلامة! 👋"); };
 
   const handleExportData = async () => {
@@ -130,6 +156,8 @@ const SettingsPage = () => {
     { id: "privacy", label: t("privacy"), icon: Shield },
     { id: "notifications", label: t("notifications"), icon: BellIcon },
     { id: "blocked", label: t("blocked"), icon: Ban },
+    { id: "seo", label: lang === "ar" ? "SEO" : "SEO", icon: Search },
+    { id: "ads", label: lang === "ar" ? "دعاية" : "Ads", icon: Megaphone },
     { id: "more", label: t("more"), icon: FileText },
   ];
 
@@ -178,7 +206,7 @@ const SettingsPage = () => {
         </motion.div>
 
         {/* Tabs — grid layout for full visibility */}
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-4 gap-1.5">
           {tabs.map((tab) => {
             const isActive = activeTab === tab.id;
             return (
@@ -186,9 +214,9 @@ const SettingsPage = () => {
                 key={tab.id}
                 whileTap={{ scale: 0.94 }}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex flex-col items-center justify-center gap-1.5 py-3 rounded-2xl text-[11px] font-cairo font-bold transition-all relative overflow-hidden ${
+                className={`flex flex-col items-center justify-center gap-1 py-2.5 rounded-xl text-[10px] font-cairo font-bold transition-all relative overflow-hidden ${
                   isActive
-                    ? "gradient-primary text-primary-foreground shadow-[0_6px_18px_hsl(var(--primary)/0.4)]"
+                    ? "gradient-primary text-primary-foreground shadow-[0_4px_14px_hsl(var(--primary)/0.4)]"
                     : "glass-card text-muted-foreground hover:text-foreground"
                 }`}
               >
@@ -247,6 +275,26 @@ const SettingsPage = () => {
                     {lang === "ar" ? opt.label : opt.labelEn}
                   </motion.button>
                 ))}
+              </div>
+            </div>
+
+            {/* Password Change */}
+            <div className="glass-card p-4">
+              <div className="flex items-center justify-between">
+                <motion.button
+                  whileTap={{ scale: 0.95 }}
+                  onClick={() => setShowPasswordModal(true)}
+                  className="flex items-center gap-2 text-sm font-cairo font-semibold text-primary bg-primary/10 px-4 py-2 rounded-xl hover:bg-primary/20 transition-colors"
+                >
+                  <KeyRound size={14} />
+                  {lang === "ar" ? "تغيير" : "Change"}
+                </motion.button>
+                <div className="flex items-center gap-2.5">
+                  <span className="text-sm font-cairo font-semibold text-foreground">{lang === "ar" ? "كلمة المرور" : "Password"}</span>
+                  <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
+                    <KeyRound size={15} className="text-primary" />
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -431,10 +479,24 @@ const SettingsPage = () => {
           <motion.div key="blocked" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-2">
             {blockedUsers.length > 0 ? blockedUsers.map((b: any) => (
               <div key={b.id} className="glass-card p-3 flex items-center justify-between">
-                <motion.button whileTap={{ scale: 0.95 }} onClick={() => unblock.mutate(b.blocked_id)} className="text-xs bg-destructive/15 text-destructive px-3 py-1.5 rounded-lg font-cairo font-semibold">{t("unblock")}</motion.button>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-cairo font-semibold text-foreground">{b.blocked?.full_name || b.blocked?.username}</span>
-                  <Ban size={14} className="text-destructive" />
+                <motion.button whileTap={{ scale: 0.95 }} onClick={() => unblock.mutate(b.blocked_id)} className="text-xs bg-destructive/15 text-destructive px-3 py-1.5 rounded-lg font-cairo font-semibold hover:bg-destructive/25 transition-colors">{t("unblock")}</motion.button>
+                <div className="flex items-center gap-3">
+                  <div className="text-right">
+                    <p className="text-sm font-cairo font-semibold text-foreground leading-tight">{b.blocked?.full_name || "—"}</p>
+                    <p className="text-[11px] text-muted-foreground font-cairo" dir="ltr">@{b.blocked?.username || "unknown"}</p>
+                  </div>
+                  <div className="relative">
+                    {b.blocked?.avatar_url ? (
+                      <img src={b.blocked.avatar_url} alt="" className="w-10 h-10 rounded-xl object-cover ring-2 ring-destructive/30" />
+                    ) : (
+                      <div className="w-10 h-10 rounded-xl bg-destructive/10 flex items-center justify-center ring-2 ring-destructive/20">
+                        <User size={18} className="text-destructive/60" />
+                      </div>
+                    )}
+                    <div className="absolute -bottom-1 -left-1 w-4 h-4 rounded-full bg-destructive flex items-center justify-center">
+                      <Ban size={9} className="text-white" />
+                    </div>
+                  </div>
                 </div>
               </div>
             )) : (
@@ -445,6 +507,126 @@ const SettingsPage = () => {
                 <p className="text-muted-foreground font-cairo">{t("noBlocked")}</p>
               </div>
             )}
+          </motion.div>
+        )}
+
+        {/* SEO */}
+        {activeTab === "seo" && (
+          <motion.div key="seo" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-4">
+            <div className="glass-card p-5 space-y-4">
+              <div className="flex items-center gap-2 justify-end">
+                <h3 className="font-cairo font-bold text-base text-foreground">{lang === "ar" ? "ظهور في جوجل" : "Google Visibility"}</h3>
+                <div className="w-9 h-9 rounded-xl bg-[#4285F4]/15 flex items-center justify-center">
+                  <Search size={17} className="text-[#4285F4]" />
+                </div>
+              </div>
+              <div className="bg-[#4285F4]/5 border border-[#4285F4]/15 rounded-2xl p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-[#4285F4] bg-[#4285F4]/10 px-2 py-0.5 rounded-full">نتيجة بحث</span>
+                </div>
+                <p className="text-[#1a0dab] text-sm font-semibold leading-tight" dir="ltr">
+                  mstkhbi.app/@{profile?.username}
+                </p>
+                <p className="text-[#006621] text-xs" dir="ltr">https://mstkhbi.app/@{profile?.username}</p>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  ابعتلي رسائل سرية — {profile?.full_name || profile?.username} على منصة مستخبي. قول اللي في قلبك من غير ما حد يعرفك.
+                </p>
+              </div>
+              <div className="space-y-3 pt-2">
+                <p className="text-xs text-muted-foreground font-cairo text-right leading-relaxed">
+                  {lang === "ar"
+                    ? "✅ صفحتك بتظهر في نتائج جوجل فورًا بعد تفعيل الحساب. شارك رابطك وهيظهر في البحث خلال 24-48 ساعة."
+                    : "✅ Your page appears on Google instantly after account activation. Share your link and it'll show in search within 24-48 hours."
+                  }
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { label: lang === "ar" ? "فهرسة فورية" : "Instant Index", icon: "⚡", desc: lang === "ar" ? "sitemap.xml محدّث" : "Updated sitemap.xml" },
+                    { label: lang === "ar" ? "Open Graph" : "Open Graph", icon: "🔗", desc: lang === "ar" ? "معاينة جميلة في السوشيال" : "Rich preview on social" },
+                    { label: lang === "ar" ? "روابط آمنة" : "Safe Links", icon: "🔒", desc: "HTTPS + canonical" },
+                    { label: lang === "ar" ? "سرعة عالية" : "Fast Load", icon: "🚀", desc: lang === "ar" ? "Core Web Vitals جيد" : "Good Core Web Vitals" },
+                  ].map((item) => (
+                    <div key={item.label} className="bg-secondary/30 rounded-xl p-3 space-y-1">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-lg">{item.icon}</span>
+                        <span className="text-xs font-cairo font-bold text-foreground">{item.label}</span>
+                      </div>
+                      <p className="text-[10px] text-muted-foreground">{item.desc}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="glass-card p-4 space-y-3">
+              <h4 className="font-cairo font-bold text-sm text-foreground text-right">{lang === "ar" ? "نصائح لتحسين ظهورك" : "Tips to Improve Visibility"}</h4>
+              {[
+                { tip: lang === "ar" ? "أضف بايو واضح بكلمات مميزة" : "Add a clear bio with keywords", done: !!profile?.bio },
+                { tip: lang === "ar" ? "ارفع صورة بروفايل" : "Upload a profile photo", done: !!profile?.avatar_url },
+                { tip: lang === "ar" ? "شارك رابطك على السوشيال ميديا" : "Share your link on social media", done: false },
+                { tip: lang === "ar" ? "اطلب من أصحابك يبعتوا رسائل" : "Ask friends to send messages", done: false },
+              ].map((item, i) => (
+                <div key={i} className="flex items-center gap-3">
+                  <div className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 ${item.done ? "bg-primary/20" : "bg-border/30"}`}>
+                    {item.done ? <Check size={11} className="text-primary" /> : <span className="text-[10px] text-muted-foreground">{i+1}</span>}
+                  </div>
+                  <span className={`text-sm font-cairo ${item.done ? "text-foreground line-through opacity-60" : "text-foreground"}`}>{item.tip}</span>
+                </div>
+              ))}
+            </div>
+          </motion.div>
+        )}
+
+        {/* Ads */}
+        {activeTab === "ads" && (
+          <motion.div key="ads" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-4">
+            <div className="glass-card overflow-hidden">
+              <div className="gradient-primary p-5 text-center space-y-2">
+                <div className="w-14 h-14 bg-primary-foreground/20 rounded-2xl flex items-center justify-center mx-auto">
+                  <Megaphone size={28} className="text-primary-foreground" />
+                </div>
+                <h3 className="font-cairo font-bold text-lg text-primary-foreground">دعاية مستخبي</h3>
+                <p className="text-primary-foreground/80 text-xs font-cairo">وصّل رسالتك لآلاف المستخدمين</p>
+              </div>
+              <div className="p-4 space-y-3">
+                {[
+                  { plan: "المبتدئ", price: "49 جنيه", reach: "500 مشاهدة", icon: "🚀", color: "border-primary/30 bg-primary/5" },
+                  { plan: "المحترف", price: "149 جنيه", reach: "2,000 مشاهدة", icon: "⭐", color: "border-accent/30 bg-accent/5", popular: true },
+                  { plan: "الأقوى", price: "399 جنيه", reach: "6,000 مشاهدة", icon: "💎", color: "border-yellow-500/30 bg-yellow-500/5" },
+                ].map((p) => (
+                  <div key={p.plan} className={`rounded-2xl border-2 p-4 relative ${p.color}`}>
+                    {(p as any).popular && (
+                      <span className="absolute -top-2.5 right-4 text-[10px] font-cairo font-bold bg-accent text-accent-foreground px-2.5 py-0.5 rounded-full">الأكثر طلبًا</span>
+                    )}
+                    <div className="flex items-center justify-between">
+                      <div className="text-right">
+                        <p className="text-lg font-cairo font-bold text-foreground">{p.price}</p>
+                        <p className="text-xs text-muted-foreground">{p.reach}</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-cairo font-bold text-foreground text-sm">{p.plan}</span>
+                        <span className="text-2xl">{p.icon}</span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                <a
+                  href="https://wa.me/201092812463?text=عايز أعمل دعاية على مستخبي"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full flex items-center justify-center gap-2 bg-green-500/15 border border-green-500/25 text-green-400 py-3.5 rounded-xl font-cairo font-bold text-sm hover:bg-green-500/25 transition-colors"
+                >
+                  <ExternalLink size={16} />
+                  تواصل للاشتراك
+                </a>
+              </div>
+            </div>
+            <div className="glass-card p-4 text-center space-y-2">
+              <Star size={24} className="text-primary mx-auto" />
+              <p className="text-xs text-muted-foreground font-cairo leading-relaxed">
+                دعايتك بتظهر في الفيد وصفحة الاستكشاف لمستخدمين حقيقيين داخل التطبيق. تواصل معنا وهنساعدك توصل للجمهور الصح.
+              </p>
+            </div>
           </motion.div>
         )}
 
@@ -484,6 +666,70 @@ const SettingsPage = () => {
         )}
         </AnimatePresence>
       </div>
+
+      {/* Password Modal */}
+      <AnimatePresence>
+      {showPasswordModal && (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 flex items-end justify-center bg-background/80 backdrop-blur-sm" onClick={() => setShowPasswordModal(false)}>
+          <motion.div initial={{ y: 100 }} animate={{ y: 0 }} exit={{ y: 100 }} className="w-full max-w-lg glass-card rounded-t-3xl p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
+            <div className="w-10 h-1 rounded-full bg-border/50 mx-auto" />
+            <div className="flex items-center gap-3 justify-center">
+              <KeyRound size={20} className="text-primary" />
+              <h3 className="font-cairo font-bold text-lg text-foreground">{lang === "ar" ? "تغيير كلمة المرور" : "Change Password"}</h3>
+            </div>
+            <div className="space-y-3">
+              <div className="relative">
+                <input
+                  type={showNewPw ? "text" : "password"}
+                  value={pwNew}
+                  onChange={(e) => setPwNew(e.target.value)}
+                  placeholder={lang === "ar" ? "كلمة المرور الجديدة" : "New password"}
+                  className="w-full bg-secondary/30 rounded-xl py-3 px-4 text-sm text-foreground font-cairo border border-border/20 focus:border-primary/50 focus:outline-none pr-10"
+                  dir="ltr"
+                />
+                <button onClick={() => setShowNewPw(!showNewPw)} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
+                  {showNewPw ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
+              <div className="relative">
+                <input
+                  type={showCurrentPw ? "text" : "password"}
+                  value={pwConfirm}
+                  onChange={(e) => setPwConfirm(e.target.value)}
+                  placeholder={lang === "ar" ? "تأكيد كلمة المرور" : "Confirm password"}
+                  className="w-full bg-secondary/30 rounded-xl py-3 px-4 text-sm text-foreground font-cairo border border-border/20 focus:border-primary/50 focus:outline-none pr-10"
+                  dir="ltr"
+                />
+                <button onClick={() => setShowCurrentPw(!showCurrentPw)} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
+                  {showCurrentPw ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
+              {pwNew && pwConfirm && pwNew !== pwConfirm && (
+                <p className="text-xs text-destructive font-cairo text-right">❌ كلمتا المرور مش متطابقتين</p>
+              )}
+              {pwNew && pwNew.length > 0 && (
+                <div className="flex gap-1 mt-1">
+                  {[8, 12, 16].map((len) => (
+                    <div key={len} className={`h-1 flex-1 rounded-full transition-colors ${pwNew.length >= len ? "bg-primary" : "bg-secondary"}`} />
+                  ))}
+                  <span className="text-[10px] text-muted-foreground font-cairo mr-1">{pwNew.length < 8 ? "ضعيفة" : pwNew.length < 12 ? "متوسطة" : "قوية"}</span>
+                </div>
+              )}
+            </div>
+            <motion.button
+              whileTap={{ scale: 0.97 }}
+              onClick={handleChangePassword}
+              disabled={pwLoading || !pwNew || !pwConfirm}
+              className="w-full gradient-primary text-primary-foreground rounded-xl py-3.5 flex items-center justify-center gap-2 text-base font-cairo font-bold shadow-[0_4px_20px_hsl(var(--primary)/0.4)] disabled:opacity-50"
+            >
+              {pwLoading ? <Loader2 size={18} className="animate-spin" /> : <KeyRound size={18} />}
+              {lang === "ar" ? "تغيير كلمة المرور" : "Change Password"}
+            </motion.button>
+            <button onClick={() => setShowPasswordModal(false)} className="w-full py-2.5 rounded-xl text-sm font-cairo font-semibold text-muted-foreground hover:text-foreground transition-colors">{t("cancel")}</button>
+          </motion.div>
+        </motion.div>
+      )}
+      </AnimatePresence>
 
       {/* Edit Modal */}
       <AnimatePresence>

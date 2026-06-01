@@ -12,6 +12,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useFollows } from "@/hooks/useFollows";
 import { useProfileVisits } from "@/hooks/useProfileVisits";
 import { messageSchema } from "@/lib/contentFilter";
+import { setProfileMeta } from "@/lib/seo";
 import { sanitizeTextForDatabase } from "@/lib/sanitizeText";
 import { formatDistanceToNow } from "date-fns";
 import { ar } from "date-fns/locale";
@@ -58,6 +59,22 @@ const { follow, following = [] } = useFollows();
   useEffect(() => {
     if (receiverProfile?.id) recordVisit(receiverProfile.id);
   }, [receiverProfile?.id]);
+
+  // SEO: set dynamic meta when profile loads
+  useEffect(() => {
+    if (receiverProfile?.username) {
+      setProfileMeta(
+        receiverProfile.username,
+        receiverProfile.full_name || receiverProfile.username,
+        receiverProfile.bio || undefined,
+        receiverProfile.avatar_url || undefined,
+      );
+    }
+    return () => {
+      // Reset to default on unmount
+      document.title = "مستخبي — ابعت رسائل سرية من غير ما حد يعرفك";
+    };
+  }, [receiverProfile?.username, receiverProfile?.full_name, receiverProfile?.bio, receiverProfile?.avatar_url]);
 
   const checkRateLimit = (): boolean => {
     const now = Date.now();
