@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
 import { useEffect } from "react";
+import { sanitizeTextForDatabase } from "@/lib/sanitizeText";
 
 export const useChatReactions = (chatId: string | undefined, messageIds: string[]) => {
   const { user } = useAuth();
@@ -42,14 +43,19 @@ export const useChatReactions = (chatId: string | undefined, messageIds: string[
         (r: any) => r.message_id === messageId && r.user_id === user.id && r.emoji === emoji
       );
       if (existing) {
-        await supabase.from("chat_reactions").delete().eq("id", existing.id);
+        const { error } = await supabase.from("chat_reactions").delete().eq("id", existing.id);
+        if (error) throw error;
       } else {
         // remove any prior reaction by this user on this message (one reaction per user per msg)
         const prior = reactions.find((r: any) => r.message_id === messageId && r.user_id === user.id);
-        if (prior) await supabase.from("chat_reactions").delete().eq("id", prior.id);
-        await supabase.from("chat_reactions").insert({
+        if (prior) {
+          const { error } = await supabase.from("chat_reactions").delete().eq("id", prior.id);
+          if (error) throw error;
+        }
+        const { error } = await supabase.from("chat_reactions").insert({
           message_id: messageId, user_id: user.id, emoji,
         });
+        if (error) throw error;
       }
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["chat-reactions", chatId] }),
@@ -77,15 +83,18 @@ export const useChatMessageActions = (chatId: string | undefined) => {
 
   const editMessage = useMutation({
     mutationFn: async ({ id, content }: { id: string; content: string }) => {
+      const safeContent = sanitizeTextForDatabase(content);
+      if (!safeContent) throw new Error("empty_message");
       const { error } = await supabase
         .from("chat_messages")
-        .update({ content, is_edited: true, edited_at: new Date().toISOString() })
+        .update({ content: safeContent, is_edited: true, edited_at: new Date().toISOString() })
         .eq("id", id);
       if (error) throw error;
     },
     onMutate: async ({ id, content }) => {
+      const safeContent = sanitizeTextForDatabase(content);
       qc.setQueryData(["chat-messages", chatId], (old: any[]) =>
-        old?.map((m) => m.id === id ? { ...m, content, is_edited: true } : m)
+        old?.map((m) => m.id === id ? { ...m, content: safeContent, is_edited: true } : m)
       );
     },
   });

@@ -53,11 +53,8 @@ export const usePushNotifications = () => {
     } catch { return; }
 
     const hostname = window.location.hostname;
-    // ✅ FIX: أزلنا localhost من هنا — دعنا نسمح بـ localhost للـ development
-    if (
-      hostname.includes("lovableproject.com") ||
-      hostname.includes("id-preview--")
-    ) {
+    // لا تعمل في بيئات المعاينة
+    if (hostname.includes("id-preview--")) {
       setVapidStatus("unavailable");
       return;
     }

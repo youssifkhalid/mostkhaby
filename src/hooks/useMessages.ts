@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
 import { useEffect } from "react";
+import { sanitizeTextForDatabase } from "@/lib/sanitizeText";
 
 const MSG_SELECT = "id,content,created_at,is_favorite,is_read,is_public,sender_id,receiver_id,sent_by,sender:profiles!messages_sender_id_fkey(id,username,full_name,avatar_url)";
 const SENT_SELECT = "id,content,created_at,is_favorite,is_read,is_public,receiver_id,sender_id,sent_by,receiver:profiles!messages_receiver_id_fkey(id,username,full_name,avatar_url)";
@@ -217,27 +218,27 @@ export const useMessages = () => {
   const sendMessage = useMutation({
     mutationFn: async ({ receiver_id, content, sender_id }: { receiver_id: string; content: string; sender_id?: string; receiver?: { id: string; username: string; full_name: string | null; avatar_url: string | null } }) => {
       const sid = sender_id || null;
-      const { data, error } = await supabase
-        .from("messages")
-        .insert({
-          receiver_id,
-          content,
-          sender_id: sid,
-          sent_by: user?.id || null,
-        })
-        .select(SENT_SELECT)
-        .single();
+      const safeContent = sanitizeTextForDatabase(content);
+      if (!safeContent) throw new Error("empty_message");
+      const payload = {
+        receiver_id,
+        content: safeContent,
+        sender_id: sid,
+        sent_by: user?.id || null,
+      };
+      const { error } = await supabase.from("messages").insert(payload);
       if (error) throw error;
-      return data;
+      return null;
     },
     onMutate: async ({ receiver_id, content, sender_id, receiver }) => {
       if (!user?.id) return {};
       const tempId = `temp-${Date.now()}`;
       const sid = sender_id || null;
+      const safeContent = sanitizeTextForDatabase(content);
       const optimistic = {
         id: tempId,
         receiver_id,
-        content,
+        content: safeContent,
         sender_id: sid,
         sent_by: user.id,
         created_at: new Date().toISOString(),
@@ -250,14 +251,10 @@ export const useMessages = () => {
       queryClient.setQueryData(["sent-messages", user.id], (old: any[]) => [optimistic, ...(old || [])]);
       return { tempId };
     },
-    onSuccess: (data, _vars, ctx) => {
-      if (!data || !user?.id) return;
-      queryClient.setQueryData(["sent-messages", user.id], (old: any[]) => {
-        const current = old || [];
-        const withoutTemp = current.filter((m: any) => m.id !== ctx?.tempId);
-        if (withoutTemp.some((m: any) => m.id === data.id)) return withoutTemp;
-        return [data, ...withoutTemp];
-      });
+    onSuccess: () => {
+      if (!user?.id) return;
+      queryClient.invalidateQueries({ queryKey: ["sent-messages", user.id] });
+      queryClient.invalidateQueries({ queryKey: ["messages", user.id] });
     },
     onError: (_err, _vars, ctx) => {
       if (!user?.id || !ctx?.tempId) return;

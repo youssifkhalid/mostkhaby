@@ -5,6 +5,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
 import { useEffect, useState, useRef, useCallback } from "react";
+import { sanitizeTextForDatabase } from "@/lib/sanitizeText";
+import { toast } from "sonner";
 
 const CHAT_SELECT =
   "id,user1_id,user2_id,last_message_at,last_message_content,last_message_sender_id,deleted_by,cleared_before," +
@@ -318,16 +320,18 @@ export const useChatMessages = (chatId: string | undefined) => {
       waveform?: number[];
     }) => {
       if (!user?.id || !chatId) throw new Error("Missing data");
+      const safeContent = sanitizeTextForDatabase(content);
+      const finalContent =
+        safeContent ||
+        (mediaType === "image"
+          ? "📷 صورة"
+          : mediaType === "audio"
+          ? "🎤 رسالة صوتية"
+          : "");
       const { error } = await supabase.from("chat_messages").insert({
         chat_id: chatId,
         sender_id: user.id,
-        content:
-          content ||
-          (mediaType === "image"
-            ? "📷 صورة"
-            : mediaType === "audio"
-            ? "🎤 رسالة صوتية"
-            : ""),
+        content: finalContent,
         reply_to_id: replyToId || null,
         media_url: mediaUrl || null,
         media_type: mediaType || null,
@@ -346,17 +350,19 @@ export const useChatMessages = (chatId: string | undefined) => {
       waveform,
     }) => {
       const tempId = `temp-${Date.now()}`;
+      const safeContent = sanitizeTextForDatabase(content);
+      const finalContent =
+        safeContent ||
+        (mediaType === "image"
+          ? "📷 صورة"
+          : mediaType === "audio"
+          ? "🎤 رسالة صوتية"
+          : "");
       const optimistic = {
         id: tempId,
         chat_id: chatId,
         sender_id: user?.id,
-        content:
-          content ||
-          (mediaType === "image"
-            ? "📷 صورة"
-            : mediaType === "audio"
-            ? "🎤 رسالة صوتية"
-            : ""),
+        content: finalContent,
         reply_to_id: replyToId || null,
         status: "sending",
         created_at: new Date().toISOString(),
@@ -374,12 +380,16 @@ export const useChatMessages = (chatId: string | undefined) => {
       );
       return { tempId };
     },
-    // ✅ FIX 3: onSuccess to confirm message sent
     onSuccess: () => {
-      console.log("✅ Message sent, waiting for realtime...");
+      if (import.meta.env.DEV) console.info("✅ Message sent, waiting for realtime...");
+      qc.invalidateQueries({ queryKey: ["chat-messages", chatId, user?.id] });
+      qc.invalidateQueries({ queryKey: ["chats", user?.id] });
     },
     onError: (_err, _vars, ctx) => {
-      console.error("❌ Send failed:", _err);
+      if (import.meta.env.DEV) console.error("❌ Send failed:", _err);
+      const message = (_err as any)?.message || "";
+      const isRuleIssue = message.includes("row-level security") || message.includes("permission denied");
+      toast.error(isRuleIssue ? "صلاحيات الشات محتاجة تحديث من قاعدة البيانات" : `حصلت مشكلة في إرسال الرسالة${message ? `: ${message}` : ""}`);
       qc.setQueryData(
         ["chat-messages", chatId, user?.id],
         (old: any[]) =>
