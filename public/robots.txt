@@ -1,3 +1,14 @@
+# Mstkhbi - robots.txt
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /supabase/
+Disallow: /_next/
+
+# Sitemaps
+Sitemap: https://mstkhbi.app/sitemap.xml
+
+# Social crawlers — allow all
 User-agent: Googlebot
 Allow: /
 
@@ -10,5 +21,11 @@ Allow: /
 User-agent: facebookexternalhit
 Allow: /
 
-User-agent: *
+User-agent: LinkedInBot
+Allow: /
+
+User-agent: TelegramBot
+Allow: /
+
+User-agent: WhatsApp
 Allow: /
