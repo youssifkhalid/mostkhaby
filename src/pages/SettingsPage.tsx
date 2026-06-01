@@ -156,8 +156,7 @@ const SettingsPage = () => {
     { id: "privacy", label: t("privacy"), icon: Shield },
     { id: "notifications", label: t("notifications"), icon: BellIcon },
     { id: "blocked", label: t("blocked"), icon: Ban },
-    { id: "seo", label: lang === "ar" ? "SEO" : "SEO", icon: Search },
-    { id: "ads", label: lang === "ar" ? "دعاية" : "Ads", icon: Megaphone },
+
     { id: "more", label: t("more"), icon: FileText },
   ];
 
