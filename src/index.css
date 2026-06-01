@@ -322,11 +322,7 @@
   background: hsl(var(--primary));
 }
 
-/* ─── Hide Lovable Badge ─── */
-@layer base {
-  #lovable-badge {
-    display: none !important;
-  }
+/* Badge styles removed */
 }
 
 /* ─── Focus Visible ─── */

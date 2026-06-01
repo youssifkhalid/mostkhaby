@@ -4,10 +4,7 @@ import "./index.css";
 
 if ("serviceWorker" in navigator) {
   const inIframe = (() => { try { return window.self !== window.top; } catch { return true; } })();
-  const isPreview =
-    window.location.hostname.includes("lovableproject.com") ||
-    window.location.hostname.includes("id-preview--") ||
-    window.location.hostname === "localhost";
+  const isPreview = window.location.hostname === "localhost";
 
   if (inIframe || isPreview) {
     navigator.serviceWorker.getRegistrations().then((regs) => regs.forEach((r) => r.unregister()));
@@ -15,7 +12,6 @@ if ("serviceWorker" in navigator) {
     window.addEventListener("load", () => {
       navigator.serviceWorker.register("/sw.js").catch(() => {});
     });
-    // Listen for navigation requests from SW (notification clicks)
     navigator.serviceWorker.addEventListener("message", (e) => {
       if (e.data?.type === "navigate" && e.data.url) {
         window.location.href = e.data.url;
